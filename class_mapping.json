@@ -1,0 +1,30 @@
+{
+  "255,0,255": {
+    "index": 1,
+    "name": "Class 1"
+  },
+  "0,85,255": {
+    "index": 2,
+    "name": "Class 2"
+  },
+  "255,255,0": {
+    "index": 3,
+    "name": "Class 3"
+  },
+  "255,0,0": {
+    "index": 4,
+    "name": "Class 4"
+  },
+  "85,85,255": {
+    "index": 5,
+    "name": "Class 5"
+  },
+  "255,203,15": {
+    "index": 6,
+    "name": "Class 6"
+  },
+  "255,142,66": {
+    "index": 7,
+    "name": "Class 7"
+  }
+}

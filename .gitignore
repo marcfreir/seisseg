@@ -169,3 +169,21 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Temporary and Experimental Folders
+.tmp
+/tmp
+/tmp/
+.TMP
+/TMP
+/TMP/
+.lab
+/lab
+/lab/
+.LAB
+/LAB
+/LAB/
+/bkp
+/bkp/
+/BKP
+/BKP/
