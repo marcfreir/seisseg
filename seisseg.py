@@ -178,6 +178,18 @@ class ImageSegmentationApp(QMainWindow):
         exit_action = file_menu.addAction('Exit')
         exit_action.triggered.connect(self.close)
 
+        # Add Edit menu with Undo/Redo actions
+        edit_menu = menu_bar.addMenu('Edit')
+        undo_action = QAction('Undo', self)
+        undo_action.setShortcut('Ctrl+Z')
+        undo_action.triggered.connect(self.undo)
+        edit_menu.addAction(undo_action)
+
+        redo_action = QAction('Redo', self)
+        redo_action.setShortcut('Ctrl+Y')
+        redo_action.triggered.connect(self.redo)
+        edit_menu.addAction(redo_action)
+
         # Add "Apply" menu
         apply_menu = menu_bar.addMenu('Apply')
         apply_menu.addAction('Gabor Filter', self.apply_gabor)
@@ -266,6 +278,10 @@ class ImageSegmentationApp(QMainWindow):
         self.processed_data = None  # Holds grayscale data for processing
         self.color_palette = None   # Tracks current color palette
 
+        # Initialize undo and redo stacks
+        self.undo_stack = []
+        self.redo_stack = []
+
     def showEvent(self, event: QShowEvent) -> None:
         """Handle window show event to fit the logo initially"""
         super().showEvent(event)
@@ -295,6 +311,11 @@ class ImageSegmentationApp(QMainWindow):
         self.scene.clear()
         self.current_label = []
         self.labels = []
+
+        # Clear undo/redo stacks when opening a new image
+        self.undo_stack.clear()
+        self.redo_stack.clear()
+        self.label_counter = 0
 
         # Handle TIFF separately
         if file_path.lower().endswith(('.tif', '.tiff')):
@@ -786,6 +807,17 @@ class ImageSegmentationApp(QMainWindow):
             overlay_item = QGraphicsPixmapItem(QPixmap.fromImage(qimage))
             self.scene.addItem(overlay_item)
             self.labels.append((self.current_label, self.current_color))
+
+            # Store both overlay and path in the undo stack
+            self.undo_stack.append({
+                'label': (self.current_label.copy(), self.current_color),
+                'overlay': overlay_item,
+                'path': self.current_path_item
+            })
+            self.redo_stack.clear()  # Clear redo stack on new action
+
+            self.labels.append((self.current_label.copy(), self.current_color))
+
             self.save_label_log()
 
             label_name = ['First', 'Second', 'Third', 'Fourth', 'Fifth']
@@ -820,6 +852,8 @@ class ImageSegmentationApp(QMainWindow):
             self.image_item = QGraphicsPixmapItem(pixmap)
             self.scene.addItem(self.image_item)
         self.labels = []
+        self.undo_stack.clear()
+        self.redo_stack.clear()
         self.label_counter = 0
 
     def save_label_log(self) -> None:
@@ -895,6 +929,31 @@ class ImageSegmentationApp(QMainWindow):
                 # Convert to RGB before saving to avoid alpha channel issues
                 white_bg.convert('RGB').save(file_path)
                 self.statusBar.showMessage(f'Labels saved as {file_path}', 3000)
+
+
+    def undo(self) -> None:
+        if self.undo_stack:
+            entry = self.undo_stack.pop()
+            # Remove from labels list
+            if self.labels and self.labels[-1] == entry['label']:
+                self.labels.pop()
+                # Remove both overlay and path from the scene
+                self.scene.removeItem(entry['overlay'])
+                self.scene.removeItem(entry['path'])
+                self.redo_stack.append(entry)
+                self.label_counter = len(self.labels)
+                self.statusBar.showMessage("Undo: Label removed", 3000)
+
+    def redo(self) -> None:
+        if self.redo_stack:
+            entry = self.redo_stack.pop()
+            self.labels.append(entry['label'])
+            # Add both overlay and path back to the scene
+            self.scene.addItem(entry['overlay'])
+            self.scene.addItem(entry['path'])
+            self.undo_stack.append(entry)
+            self.label_counter = len(self.labels)
+            self.statusBar.showMessage("Redo: Label restored", 3000)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
