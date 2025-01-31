@@ -17,6 +17,10 @@ from skimage.feature import local_binary_pattern, hog, graycomatrix, graycoprops
 from skimage import img_as_ubyte
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
+import scipy.signal as sig
+from scipy import ndimage
+from scipy.ndimage import gaussian_filter
+from skimage.filters import threshold_multiotsu
 
 from typing import Optional, Dict, Tuple, List
 
@@ -197,6 +201,21 @@ class ImageSegmentationApp(QMainWindow):
         apply_menu.addAction('GLCM', self.apply_glcm)
         apply_menu.addAction('Gradient of Texture (GoT)', self.apply_got)
         apply_menu.addAction('Histogram of Gradients (HOG)', self.apply_hog)
+
+        # New seismic attributes
+        apply_menu.addAction('Semblance', self.apply_semblance)
+        apply_menu.addAction('Amplitude Envelope', self.apply_amplitude_envelope)
+        apply_menu.addAction('Instantaneous Frequency', self.apply_instantaneous_frequency)
+        apply_menu.addAction('Butterworth Filter', self.apply_butterworth)
+        apply_menu.addAction('Multi-Otsu Threshold', self.apply_multi_otsu)
+        apply_menu.addAction('Spectral Decomposition', self.apply_spectral_decomposition)
+        apply_menu.addAction('Structural Smoothing', self.apply_structural_smoothing)
+
+        # Advanced Attributes
+        apply_menu.addAction('Structural Curvature', self.apply_curvature)
+        apply_menu.addAction('Structure-Oriented Filtering', self.apply_dip_steering)
+
+        # Add "Reset" menu
         apply_menu.addAction('Reset to Original', self.reset_to_original)
 
         # Add Color Palette menu
@@ -508,6 +527,202 @@ class ImageSegmentationApp(QMainWindow):
             hog_image = (hog_image - hog_image.min()) / (hog_image.max() - hog_image.min())
             self.processed_data = hog_image
             self._update_display()
+
+    # New attributes - seismic attributes
+    def apply_semblance(self) -> None:
+        """Calculate seismic coherence/semblance attribute"""
+        if self.processed_data is None: return
+        
+        # Get window size from user
+        w, ok = QInputDialog.getInt(self, 'Semblance', 'Window Size (odd):', 3, 3, 15, 2)
+        if not ok or w%2 == 0: return
+        
+        data = self.processed_data.astype(np.float32)
+        w2 = w//2
+        semblance = np.zeros_like(data)
+        
+        # Pad array for border processing
+        padded = np.pad(data, w2, mode='reflect')
+        
+        # Calculate semblance in sliding window
+        for i in range(w2, data.shape[0]+w2):
+            for j in range(w2, data.shape[1]+w2):
+                window = padded[i-w2:i+w2+1, j-w2:j+w2+1]
+                mean = window.mean()
+                semblance[i-w2,j-w2] = window.var() / (mean**2 + 1e-6) if mean != 0 else 0
+                
+        self.processed_data = semblance
+        self._update_display()
+
+    def apply_amplitude_envelope(self) -> None:
+        """Calculate Hilbert envelope"""
+        if self.processed_data is None: return
+        
+        analytic = sig.hilbert(self.processed_data)
+        envelope = np.abs(analytic)
+        self.processed_data = envelope
+        self._update_display()
+
+    def apply_butterworth(self) -> None:
+        """Bandpass Butterworth filter"""
+        if self.processed_data is None: return
+        
+        # Get filter parameters
+        low, ok1 = QInputDialog.getDouble(self, 'Butterworth', 'Low cutoff (0-0.5):', 0.1, 0, 0.5)
+        high, ok2 = QInputDialog.getDouble(self, 'Butterworth', 'High cutoff (0-0.5):', 0.4, 0, 0.5)
+        order, ok3 = QInputDialog.getInt(self, 'Butterworth', 'Filter order:', 4, 1, 8)
+        
+        if not (ok1 and ok2 and ok3) or low >= high: return
+        
+        # Design filter
+        b, a = sig.butter(order, [low, high], btype='band')
+        filtered = sig.filtfilt(b, a, self.processed_data)
+        self.processed_data = filtered
+        self._update_display()
+
+    def apply_multi_otsu(self) -> None:
+        """Multi-level Otsu thresholding"""
+        if self.processed_data is None: return
+        
+        classes, ok = QInputDialog.getInt(self, 'Otsu', 'Number of classes:', 3, 2, 5)
+        if not ok: return
+        
+        thresholds = threshold_multiotsu(self.processed_data, classes)
+        regions = np.digitize(self.processed_data, thresholds)
+        self.processed_data = regions/classes  # Normalize for display
+        self._update_display()
+
+    def apply_spectral_decomposition(self) -> None:
+        """Time-frequency analysis using STFT"""
+        if self.processed_data is None: return
+        
+        # Get frequency band
+        freq, ok = QInputDialog.getDouble(self, 'Spectral Decomp', 'Target Frequency:', 30, 1, 100)
+        if not ok: return
+        
+        f, t, Zxx = sig.stft(self.processed_data, nperseg=64)
+        closest_idx = np.argmin(np.abs(f - freq))
+        spectral_mag = np.abs(Zxx[closest_idx])
+        self.processed_data = spectral_mag
+        self._update_display()
+
+    def apply_structural_smoothing(self) -> None:
+        """Edge-preserving smoothing"""
+        if self.processed_data is None: return
+        
+        sigma, ok = QInputDialog.getDouble(self, 'Smoothing', 'Sigma:', 1.0, 0.1, 5.0)
+        if not ok: return
+        
+        smoothed = gaussian_filter(self.processed_data, sigma=sigma)
+        self.processed_data = smoothed
+        self._update_display()
+
+    def apply_instantaneous_frequency(self) -> None:
+        """Calculate instantaneous frequency attribute"""
+        from scipy.signal import hilbert
+        
+        if self.processed_data is None:
+            self.statusBar.showMessage("No image data available!", 5000)
+            return
+
+        try:
+            data = self.processed_data.astype(np.float32)
+            
+            # Handle 2D seismic data (time vs traces)
+            # Compute analytic signal along time dimension (axis=0)
+            analytic_signal = hilbert(data, axis=0)
+            
+            # Get instantaneous phase (unwrapped to prevent 2π jumps)
+            instantaneous_phase = np.unwrap(np.angle(analytic_signal), axis=0)
+            
+            # Compute temporal derivative (along time axis)
+            instantaneous_frequency = np.gradient(instantaneous_phase, axis=0) / (2 * np.pi)
+            
+            # Clean invalid values
+            instantaneous_frequency = np.nan_to_num(instantaneous_frequency)
+            
+            # Normalize for visualization
+            vmin, vmax = np.percentile(instantaneous_frequency, [2, 98])
+            instantaneous_frequency = np.clip(instantaneous_frequency, vmin, vmax)
+            instantaneous_frequency = (instantaneous_frequency - vmin) / (vmax - vmin + 1e-8)
+            
+            self.processed_data = instantaneous_frequency
+            self._update_display()
+            self.statusBar.showMessage("Instantaneous frequency calculated", 3000)
+            
+        except Exception as e:
+            self.statusBar.showMessage(f"Error calculating frequency: {str(e)}", 5000)
+
+    # Advanced Attributes
+    def apply_curvature(self) -> None:
+        """Structural curvature attribute"""
+        if self.processed_data is None: return
+        
+        # Calculate second derivatives
+        dy, dx = np.gradient(self.processed_data)
+        dyy, dxy = np.gradient(dy)
+        _, dxx = np.gradient(dx)
+        
+        curvature = (dxx*dy**2 - 2*dxy*dx*dy + dyy*dx**2) / (dx**2 + dy**2 + 1e-6)**1.5
+        self.processed_data = curvature
+        self._update_display()
+
+    def apply_dip_steering(self) -> None:
+        """Structure-oriented filtering using dip steering"""
+        if self.processed_data is None: 
+            return
+        
+        try:
+            data = self.processed_data.astype(np.float32)
+            
+            # Calculate gradient components
+            grad_y, grad_x = np.gradient(data)
+            
+            # Calculate dip orientation (avoid division by zero)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                dip = np.arctan2(grad_y, grad_x + 1e-8)  # Add small epsilon to prevent division by zero
+            
+            # Get kernel size from user
+            kernel_size, ok = QInputDialog.getInt(
+                self, 'Dip Steering', 'Kernel Size (odd):', 5, 3, 15, 2
+            )
+            if not ok or kernel_size % 2 == 0:
+                return
+            
+            half_size = kernel_size // 2
+            
+            # Create coordinate grid for kernel
+            y, x = np.mgrid[-half_size:half_size+1, -half_size:half_size+1]
+            
+            # Initialize output
+            filtered = np.zeros_like(data)
+            
+            # Pad input data
+            padded = np.pad(data, half_size, mode='reflect')
+            
+            # Vectorized filtering
+            for i in range(data.shape[0]):
+                for j in range(data.shape[1]):
+                    # Get local dip angle
+                    theta = dip[i, j]
+                    
+                    # Rotate coordinates
+                    x_rot = x * np.cos(theta) + y * np.sin(theta)
+                    y_rot = -x * np.sin(theta) + y * np.cos(theta)
+                    
+                    # Create Gaussian kernel oriented along dip
+                    kernel = np.exp(-0.5 * (x_rot**2 + y_rot**2))
+                    kernel /= kernel.sum()
+                    
+                    # Apply convolution
+                    filtered[i, j] = np.sum(padded[i:i+kernel_size, j:j+kernel_size] * kernel)
+            
+            self.processed_data = filtered
+            self._update_display()
+            self.statusBar.showMessage("Dip-steered filtering applied", 3000)
+            
+        except Exception as e:
+            self.statusBar.showMessage(f"Error in dip steering: {str(e)}", 5000)
 
     def reset_to_original(self) -> None:
         """
