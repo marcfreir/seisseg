@@ -28,14 +28,31 @@ Installation for the source project:
 Install all the requirements in requirements.txt
 ```
 
-```
-Instructions to create masks:
+Instructions to create masks $(baby-steps)$:
 
-soon...
+I - Go to `Open Image` >> and choose the image in some directory and click on the `Open` buttom.
+
+II - Click with the right mouse button on over the image to change the cursor to a $cross-cursor$.
+
+III - With the left mouse button you can click on the image and drag to start the labeling process. If you release the click, the trace will automatically close the label. You can continue to label where you left off.
+
+IV - To change the color label or create a new label (class), just hit the button `Create Class w/ Color`, and select the desired color, and then `Ok`.
+
+V - You can use the keys `Ctrl+z` to $undo$ the annotation or `Ctrl+y` to $redo$ the annotation, or go to the menu `Edit` to get the same functionalities.
+
+VI - To clean the entire image, you can hit the button `Reset Labels`.
+
+VII - To save the labels, you can hit the button `Save Labels`. Depend on how much colors for each class you created. Areas with no labels will be saved as $background$.
+
+VIII - To save the masks just hit the button `Save Masks`.
+
+To help in the annotation process, you can utilize the menu `Apply`, to apply attributes to the image. Also, utilize the functionalities in the `Color Palettes` menu.
 
 Done
 
-```
+</br>
+</br>
+
 > Licence: AGPL-3.0 license
 
 <!-- <style>
