@@ -617,55 +617,134 @@ class ImageSegmentationApp(QMainWindow):
         self.processed_data = smoothed
         self._update_display()
 
+    # def apply_instantaneous_frequency(self) -> None:
+    #     """Calculate instantaneous frequency attribute"""
+    #     from scipy.signal import hilbert
+        
+    #     if self.processed_data is None:
+    #         self.statusBar.showMessage("No image data available!", 5000)
+    #         return
+
+    #     try:
+    #         data = self.processed_data.astype(np.float32)
+            
+    #         # Handle 2D seismic data (time vs traces)
+    #         # Compute analytic signal along time dimension (axis=0)
+    #         analytic_signal = hilbert(data, axis=0)
+            
+    #         # Get instantaneous phase (unwrapped to prevent 2π jumps)
+    #         instantaneous_phase = np.unwrap(np.angle(analytic_signal), axis=0)
+            
+    #         # Compute temporal derivative (along time axis)
+    #         instantaneous_frequency = np.gradient(instantaneous_phase, axis=0) / (2 * np.pi)
+            
+    #         # Clean invalid values
+    #         instantaneous_frequency = np.nan_to_num(instantaneous_frequency)
+            
+    #         # Normalize for visualization
+    #         vmin, vmax = np.percentile(instantaneous_frequency, [2, 98])
+    #         instantaneous_frequency = np.clip(instantaneous_frequency, vmin, vmax)
+    #         instantaneous_frequency = (instantaneous_frequency - vmin) / (vmax - vmin + 1e-8)
+            
+    #         self.processed_data = instantaneous_frequency
+    #         self._update_display()
+    #         self.statusBar.showMessage("Instantaneous frequency calculated", 3000)
+            
+    #     except Exception as e:
+    #         self.statusBar.showMessage(f"Error calculating frequency: {str(e)}", 5000)
+
     def apply_instantaneous_frequency(self) -> None:
-        """Calculate instantaneous frequency attribute"""
+        """Calculate instantaneous frequency with user parameters"""
         from scipy.signal import hilbert
         
         if self.processed_data is None:
             self.statusBar.showMessage("No image data available!", 5000)
             return
 
+        # Get parameters from user
+        axis, ok1 = QInputDialog.getInt(
+            self, 'Frequency Axis', 
+            'Time axis (0=vertical, 1=horizontal):', 0, 0, 1
+        )
+        low_perc, ok2 = QInputDialog.getDouble(
+            self, 'Normalization Range', 
+            'Lower percentile:', 2.0, 0.0, 100.0
+        )
+        high_perc, ok3 = QInputDialog.getDouble(
+            self, 'Normalization Range',
+            'Upper percentile:', 98.0, 0.0, 100.0
+        )
+        
+        if not all([ok1, ok2, ok3]) or low_perc >= high_perc:
+            self.statusBar.showMessage("Invalid parameters", 5000)
+            return
+
         try:
             data = self.processed_data.astype(np.float32)
+            analytic_signal = hilbert(data, axis=axis)
+            instantaneous_phase = np.unwrap(np.angle(analytic_signal), axis=axis)
+            instantaneous_frequency = np.gradient(instantaneous_phase, axis=axis) / (2 * np.pi)
             
-            # Handle 2D seismic data (time vs traces)
-            # Compute analytic signal along time dimension (axis=0)
-            analytic_signal = hilbert(data, axis=0)
-            
-            # Get instantaneous phase (unwrapped to prevent 2π jumps)
-            instantaneous_phase = np.unwrap(np.angle(analytic_signal), axis=0)
-            
-            # Compute temporal derivative (along time axis)
-            instantaneous_frequency = np.gradient(instantaneous_phase, axis=0) / (2 * np.pi)
-            
-            # Clean invalid values
-            instantaneous_frequency = np.nan_to_num(instantaneous_frequency)
-            
-            # Normalize for visualization
-            vmin, vmax = np.percentile(instantaneous_frequency, [2, 98])
+            # User-controlled normalization
+            vmin, vmax = np.percentile(instantaneous_frequency, [low_perc, high_perc])
             instantaneous_frequency = np.clip(instantaneous_frequency, vmin, vmax)
             instantaneous_frequency = (instantaneous_frequency - vmin) / (vmax - vmin + 1e-8)
             
             self.processed_data = instantaneous_frequency
             self._update_display()
-            self.statusBar.showMessage("Instantaneous frequency calculated", 3000)
+            self.statusBar.showMessage(
+                f"Instantaneous frequency (axis {axis}, {low_perc}-{high_perc}%)", 
+                3000
+            )
             
         except Exception as e:
-            self.statusBar.showMessage(f"Error calculating frequency: {str(e)}", 5000)
+            self.statusBar.showMessage(f"Error: {str(e)}", 5000)
 
     # Advanced Attributes
+    # def apply_curvature(self) -> None:
+    #     """Structural curvature attribute"""
+    #     if self.processed_data is None: return
+        
+    #     # Calculate second derivatives
+    #     dy, dx = np.gradient(self.processed_data)
+    #     dyy, dxy = np.gradient(dy)
+    #     _, dxx = np.gradient(dx)
+        
+    #     curvature = (dxx*dy**2 - 2*dxy*dx*dy + dyy*dx**2) / (dx**2 + dy**2 + 1e-6)**1.5
+    #     self.processed_data = curvature
+    #     self._update_display()
+
     def apply_curvature(self) -> None:
-        """Structural curvature attribute"""
-        if self.processed_data is None: return
+        """Structural curvature with stability parameter"""
+        if self.processed_data is None: 
+            return
         
-        # Calculate second derivatives
-        dy, dx = np.gradient(self.processed_data)
-        dyy, dxy = np.gradient(dy)
-        _, dxx = np.gradient(dx)
-        
-        curvature = (dxx*dy**2 - 2*dxy*dx*dy + dyy*dx**2) / (dx**2 + dy**2 + 1e-6)**1.5
-        self.processed_data = curvature
-        self._update_display()
+        # Get stability factor
+        epsilon, ok = QInputDialog.getDouble(
+            self, 'Curvature Stability',
+            'Stabilization factor (1e-6 recommended):',
+            1e-6, 1e-12, 1e-3, 10
+        )
+        if not ok:
+            return
+
+        try:
+            dy, dx = np.gradient(self.processed_data)
+            dyy, dxy = np.gradient(dy)
+            _, dxx = np.gradient(dx)
+            
+            denominator = (dx**2 + dy**2 + epsilon)**1.5
+            curvature = (dxx*dy**2 - 2*dxy*dx*dy + dyy*dx**2) / denominator
+            
+            self.processed_data = curvature
+            self._update_display()
+            self.statusBar.showMessage(
+                f"Curvature calculated (ε={epsilon:.1e})", 
+                3000
+            )
+            
+        except Exception as e:
+            self.statusBar.showMessage(f"Curvature error: {str(e)}", 5000)
 
     def apply_dip_steering(self) -> None:
         """Structure-oriented filtering using dip steering"""
