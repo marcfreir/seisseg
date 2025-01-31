@@ -38,13 +38,34 @@ Done
 ```
 > Licence: AGPL-3.0 license
 
+<!-- <style>
+  .row {
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+  }
+  
 
-<div align="center">
+  p {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    flex-direction: row;
+  }
+</style> -->
+<!-- <p>Collaborators:</p> -->
+
+<div align="center" class="row">
 
 Collaborators:
 
-<a href="https://github.com/marcfreir" style="border-radius: 50% !important;">
+<a class="block" href="https://github.com/marcfreir" style="border-radius: 50% !important;">
   <img src="https://avatars.githubusercontent.com/u/12809691?v=4" alt="marcfreir" size="32" height="32" width="32" data-view-component="true" class="avatar circle">
+</a>
+
+<a class="block" href="https://github.com/eborin" style="border-radius: 50% !important;">
+  <img src="https://avatars.githubusercontent.com/u/11522111?v=4" alt="eborin" size="32" height="32" width="32" data-view-component="true" class="avatar circle">
 </a>
 
 
