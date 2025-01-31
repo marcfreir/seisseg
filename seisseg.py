@@ -815,8 +815,7 @@ class ImageSegmentationApp(QMainWindow):
                 'path': self.current_path_item
             })
             self.redo_stack.clear()  # Clear redo stack on new action
-
-            self.labels.append((self.current_label.copy(), self.current_color))
+            self.labels.append((self.current_label.copy(), self.current_color))   # Add to labels list
 
             self.save_label_log()
 
@@ -934,26 +933,31 @@ class ImageSegmentationApp(QMainWindow):
     def undo(self) -> None:
         if self.undo_stack:
             entry = self.undo_stack.pop()
-            # Remove from labels list
-            if self.labels and self.labels[-1] == entry['label']:
+            # Remove the label from the labels list
+            if self.labels:
                 self.labels.pop()
-                # Remove both overlay and path from the scene
-                self.scene.removeItem(entry['overlay'])
-                self.scene.removeItem(entry['path'])
-                self.redo_stack.append(entry)
-                self.label_counter = len(self.labels)
-                self.statusBar.showMessage("Undo: Label removed", 3000)
+            # Remove visual elements from the scene
+            self.scene.removeItem(entry['overlay'])
+            self.scene.removeItem(entry['path'])
+            # Add to redo stack
+            self.redo_stack.append(entry)
+            # Update counter
+            self.label_counter = len(self.labels)
+            self.statusBar.showMessage(f"Undo: Label removed ({len(self.undo_stack)} left)", 3000)
 
     def redo(self) -> None:
         if self.redo_stack:
             entry = self.redo_stack.pop()
+            # Add the label back to the labels list
             self.labels.append(entry['label'])
-            # Add both overlay and path back to the scene
+            # Add visual elements back to the scene
             self.scene.addItem(entry['overlay'])
             self.scene.addItem(entry['path'])
+            # Add to undo stack
             self.undo_stack.append(entry)
+            # Update counter
             self.label_counter = len(self.labels)
-            self.statusBar.showMessage("Redo: Label restored", 3000)
+            self.statusBar.showMessage(f"Redo: Label restored ({len(self.redo_stack)} left)", 3000)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
