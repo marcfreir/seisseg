@@ -301,188 +301,11 @@ class ImageSegmentationApp(QMainWindow):
         self.undo_stack = []
         self.redo_stack = []
 
-        # Add auto-pick mode controls
-        self.auto_pick_mode = False
-        self.seed_point = None
-        self.auto_pick_points = []
-        
-        # Add auto-pick button
-        self.auto_pick_button = QPushButton('Auto-Pick Mode (A)')
-        self.auto_pick_button.clicked.connect(self.toggle_auto_pick_mode)
-        button_layout.addWidget(self.auto_pick_button)
-        
-        # Add keyboard shortcut
-        self.auto_pick_action = QAction(self)
-        self.auto_pick_action.setShortcut('A')
-        self.auto_pick_action.triggered.connect(self.toggle_auto_pick_mode)
-        self.addAction(self.auto_pick_action)
-
     def showEvent(self, event: QShowEvent) -> None:
         """Handle window show event to fit the logo initially"""
         super().showEvent(event)
         if self.logo_item is not None and self.image is None:
             self.view.fitInView(self.logo_item, Qt.KeepAspectRatio)
-
-    def toggle_auto_pick_mode(self) -> None:
-        self.auto_pick_mode = not self.auto_pick_mode
-        status = "ON" if self.auto_pick_mode else "OFF"
-        self.statusBar.showMessage(f"Auto-pick mode {status}", 2000)
-        self.auto_pick_button.setChecked(self.auto_pick_mode)
-        
-        # Change cursor for auto-pick mode
-        if self.auto_pick_mode:
-            self.view.viewport().setCursor(Qt.CrossCursor)
-        else:
-            self.view.viewport().setCursor(Qt.ArrowCursor)
-
-    # def auto_pick_horizon(self, seed_x: int, seed_y: int):
-    #     """Automatically track seismic horizon from seed point"""
-    #     if self.processed_data is None or self.image is None:
-    #         return
-        
-    #     data = self.processed_data
-    #     height, width = data.shape
-        
-    #     # Configure picking parameters
-    #     search_window = 5  # pixels to search vertically
-    #     correlation_window = 3  # pixels for similarity comparison
-    #     max_traces = 100  # maximum traces to pick in each direction
-        
-    #     # Initialize tracking
-    #     horizon = []
-    #     directions = [1, -1]  # Right then left
-        
-    #     for direction in directions:
-    #         current_x = seed_x
-    #         current_y = seed_y
-    #         last_valid = (current_x, current_y)
-            
-    #         for _ in range(max_traces):
-    #             next_x = current_x + direction
-    #             if next_x < 0 or next_x >= width:
-    #                 break
-                
-    #             # Define search range
-    #             y_min = max(0, current_y - search_window)
-    #             y_max = min(height-1, current_y + search_window)
-                
-    #             best_y = current_y
-    #             best_similarity = -np.inf
-                
-    #             # Search for most similar trace pattern
-    #             for y in range(y_min, y_max+1):
-    #                 # Define correlation windows
-    #                 ref_start = max(0, current_y - correlation_window)
-    #                 ref_end = min(height, current_y + correlation_window + 1)
-    #                 target_start = max(0, y - correlation_window)
-    #                 target_end = min(height, y + correlation_window + 1)
-                    
-    #                 # Calculate normalized cross-correlation
-    #                 ref = data[ref_start:ref_end, current_x]
-    #                 target = data[target_start:target_end, next_x]
-                    
-    #                 if ref.size != target.size:
-    #                     continue
-                        
-    #                 similarity = np.corrcoef(ref, target)[0, 1]
-                    
-    #                 if similarity > best_similarity:
-    #                     best_similarity = similarity
-    #                     best_y = y
-                
-    #             # Validate and update position
-    #             if best_similarity > 0.5:  # Similarity threshold
-    #                 current_x = next_x
-    #                 current_y = best_y
-    #                 last_valid = (current_x, current_y)
-    #                 horizon.append((current_x, current_y))
-    #             else:
-    #                 # Use last valid position and stop
-    #                 horizon.append(last_valid)
-    #                 break
-        
-    #     # Sort points by X coordinate
-    #     horizon.sort(key=lambda p: p[0])
-    #     return horizon
-
-    def auto_pick_horizon(self, seed_x: int, seed_y: int):
-        """Automatically track seismic horizon from seed point"""
-        if self.processed_data is None or self.image is None:
-            return []
-        
-        data = self.processed_data
-        height, width = data.shape
-        
-        # Configure picking parameters
-        search_window = 5  # pixels to search vertically
-        correlation_window = 3  # pixels for similarity comparison
-        max_traces = 100  # maximum traces to pick in each direction
-        
-        # Initialize tracking
-        horizon = []
-        directions = [1, -1]  # Right then left
-        
-        for direction in directions:
-            current_x = seed_x
-            current_y = seed_y
-            last_valid = (current_x, current_y)
-            
-            for _ in range(max_traces):
-                next_x = current_x + direction
-                if next_x < 0 or next_x >= width:
-                    break
-                
-                # Define search range
-                y_min = max(0, current_y - search_window)
-                y_max = min(height-1, current_y + search_window)
-                best_y = current_y
-                best_similarity = -np.inf
-                
-                for y in range(y_min, y_max+1):
-                    # Define correlation windows
-                    ref_start = max(0, current_y - correlation_window)
-                    ref_end = min(height, current_y + correlation_window + 1)
-                    target_start = max(0, y - correlation_window)
-                    target_end = min(height, y + correlation_window + 1)
-                    
-                    # Extract reference and target traces
-                    ref = data[ref_start:ref_end, current_x]
-                    target = data[target_start:target_end, next_x]
-                    
-                    # Skip if window sizes don't match
-                    if ref.size != target.size:
-                        continue
-                    
-                    # Calculate similarity manually to avoid division by zero
-                    ref_mean = np.mean(ref)
-                    target_mean = np.mean(target)
-                    covariance = np.mean((ref - ref_mean) * (target - target_mean))
-                    std_ref = np.std(ref)
-                    std_target = np.std(target)
-                    
-                    if std_ref > 0 and std_target > 0:
-                        similarity = covariance / (std_ref * std_target)
-                    else:
-                        similarity = 0.0  # Handle zero-variance cases
-                    
-                    if similarity > best_similarity:
-                        best_similarity = similarity
-                        best_y = y
-                
-                # Validate and update position
-                if best_similarity > 0.5:  # Similarity threshold
-                    current_x = next_x
-                    current_y = best_y
-                    last_valid = (current_x, current_y)
-                    horizon.append((current_x, current_y))
-                else:
-                    # Use last valid position and stop
-                    horizon.append(last_valid)
-                    break
-        
-        # Sort points by X coordinate
-        horizon.sort(key=lambda p: p[0])
-        return horizon
 
     def open_image(self) -> None:
 
@@ -679,76 +502,31 @@ class ImageSegmentationApp(QMainWindow):
 
             self._update_display()
 
-    # def apply_hog(self) -> None:
-    #     """
-    #     Apply Histogram of Oriented Gradients (HOG) feature extraction.
-
-    #     Converts the processed image data to uint8 and calculates the HOG features.
-    #     The HOG image is normalized and used to update the display.
-
-    #     This method updates the internal processed_data with the normalized HOG image.
-    #     """
-
-    #     if self.processed_data is not None:
-    #         image_array = img_as_ubyte(self.processed_data)  # Convert to uint8
-            
-    #         # Calculate HOG
-    #         _, hog_image = hog(image_array, 
-    #                         orientations=8, 
-    #                         pixels_per_cell=(16, 16),
-    #                         cells_per_block=(1, 1), 
-    #                         visualize=True,
-    #                         channel_axis=None)
-            
-    #         # # Normalize HOG image
-    #         # hog_image = hog_image.astype(np.float32)
-    #         # hog_image = (hog_image - hog_image.min()) / (hog_image.max() - hog_image.min())
-    #         # self.processed_data = hog_image
-    #         # self._update_display()
-
-    #         # Handle zero-variance cases
-    #         hog_min = hog_image.min()
-    #         hog_range = hog_image.max() - hog_min
-    #         if hog_range > 0:
-    #             hog_image = (hog_image - hog_min) / hog_range
-    #         else:  # Handle uniform images
-    #             hog_image = np.zeros_like(hog_image)
-                
-    #         self.processed_data = hog_image.astype(np.float32)
-    #         self._update_display()
-
     def apply_hog(self) -> None:
+        """
+        Apply Histogram of Oriented Gradients (HOG) feature extraction.
+
+        Converts the processed image data to uint8 and calculates the HOG features.
+        The HOG image is normalized and used to update the display.
+
+        This method updates the internal processed_data with the normalized HOG image.
+        """
+
         if self.processed_data is not None:
             image_array = img_as_ubyte(self.processed_data)  # Convert to uint8
             
-            # Add a small noise to uniform regions to avoid division by zero
-            if np.var(image_array) == 0:
-                image_array = image_array + np.random.uniform(-1, 1, size=image_array.shape).astype(np.uint8)
-            
             # Calculate HOG
-            try:
-                _, hog_image = hog(
-                    image_array,
-                    orientations=8,
-                    pixels_per_cell=(16, 16),
-                    cells_per_block=(1, 1),
-                    visualize=True,
-                    channel_axis=None
-                )
-                
-                # Normalize the HOG image
-                hog_min = hog_image.min()
-                hog_max = hog_image.max()
-                if hog_max > hog_min:  # Avoid division by zero
-                    hog_image = (hog_image - hog_min) / (hog_max - hog_min)
-                else:
-                    hog_image = np.zeros_like(hog_image)  # Handle uniform images
-                
-                self.processed_data = hog_image.astype(np.float32)
-                self._update_display()
+            _, hog_image = hog(image_array, 
+                            orientations=8, 
+                            pixels_per_cell=(16, 16),
+                            cells_per_block=(1, 1), 
+                            visualize=True)
             
-            except Exception as e:
-                self.statusBar.showMessage(f"Error applying HOG: {str(e)}", 5000)
+            # Normalize HOG image
+            hog_image = hog_image.astype(np.float32)
+            hog_image = (hog_image - hog_image.min()) / (hog_image.max() - hog_image.min())
+            self.processed_data = hog_image
+            self._update_display()
 
     # New attributes - seismic attributes
     def apply_semblance(self) -> None:
@@ -839,6 +617,42 @@ class ImageSegmentationApp(QMainWindow):
         self.processed_data = smoothed
         self._update_display()
 
+    # def apply_instantaneous_frequency(self) -> None:
+    #     """Calculate instantaneous frequency attribute"""
+    #     from scipy.signal import hilbert
+        
+    #     if self.processed_data is None:
+    #         self.statusBar.showMessage("No image data available!", 5000)
+    #         return
+
+    #     try:
+    #         data = self.processed_data.astype(np.float32)
+            
+    #         # Handle 2D seismic data (time vs traces)
+    #         # Compute analytic signal along time dimension (axis=0)
+    #         analytic_signal = hilbert(data, axis=0)
+            
+    #         # Get instantaneous phase (unwrapped to prevent 2π jumps)
+    #         instantaneous_phase = np.unwrap(np.angle(analytic_signal), axis=0)
+            
+    #         # Compute temporal derivative (along time axis)
+    #         instantaneous_frequency = np.gradient(instantaneous_phase, axis=0) / (2 * np.pi)
+            
+    #         # Clean invalid values
+    #         instantaneous_frequency = np.nan_to_num(instantaneous_frequency)
+            
+    #         # Normalize for visualization
+    #         vmin, vmax = np.percentile(instantaneous_frequency, [2, 98])
+    #         instantaneous_frequency = np.clip(instantaneous_frequency, vmin, vmax)
+    #         instantaneous_frequency = (instantaneous_frequency - vmin) / (vmax - vmin + 1e-8)
+            
+    #         self.processed_data = instantaneous_frequency
+    #         self._update_display()
+    #         self.statusBar.showMessage("Instantaneous frequency calculated", 3000)
+            
+    #     except Exception as e:
+    #         self.statusBar.showMessage(f"Error calculating frequency: {str(e)}", 5000)
+
     def apply_instantaneous_frequency(self) -> None:
         """Calculate instantaneous frequency with user parameters"""
         from scipy.signal import hilbert
@@ -886,6 +700,19 @@ class ImageSegmentationApp(QMainWindow):
         except Exception as e:
             self.statusBar.showMessage(f"Error: {str(e)}", 5000)
 
+    # Advanced Attributes
+    # def apply_curvature(self) -> None:
+    #     """Structural curvature attribute"""
+    #     if self.processed_data is None: return
+        
+    #     # Calculate second derivatives
+    #     dy, dx = np.gradient(self.processed_data)
+    #     dyy, dxy = np.gradient(dy)
+    #     _, dxx = np.gradient(dx)
+        
+    #     curvature = (dxx*dy**2 - 2*dxy*dx*dy + dyy*dx**2) / (dx**2 + dy**2 + 1e-6)**1.5
+    #     self.processed_data = curvature
+    #     self._update_display()
 
     def apply_curvature(self) -> None:
         """Structural curvature with stability parameter"""
@@ -1172,33 +999,18 @@ class ImageSegmentationApp(QMainWindow):
             mask.save(file_path)
             self.statusBar.showMessage(f'Mask saved to {file_path}', 3000)
 
-
     def handle_left_press(self, scene_pos: QPoint) -> None:
-        if self.auto_pick_mode and self.image:
-            # Auto-pick mode handling
-            x = int(scene_pos.x())
-            y = int(scene_pos.y())
-            if 0 <= x < self.image.width and 0 <= y < self.image.height:
-                # Store seed point and run auto-picker
-                self.seed_point = (x, y)
-                self.auto_pick_points = self.auto_pick_horizon(x, y)
-                
-                # Create path from auto-picked points
-                self.current_label = [QPoint(p[0], p[1]) for p in self.auto_pick_points]
-                self.current_path = QPainterPath()
-                if self.current_label:
-                    self.current_path.moveTo(self.current_label[0].x(), self.current_label[0].y())
-                    for point in self.current_label[1:]:
-                        self.current_path.lineTo(point.x(), point.y())
-                    
-                    self.current_path_item = QGraphicsPathItem(self.current_path)
-                    self.current_path_item.setPen(QPen(self.current_color, 2))
-                    self.scene.addItem(self.current_path_item)
-                    self.drawing = True  # Enable drawing adjustments
-                return
+        """
+        Handle a left mouse button press event.
 
-        # Original manual drawing code
-        if self.image and not self.auto_pick_mode:
+        If the press event is inside the image area, start drawing a new label.
+        Create a new QPainterPath and add it to the scene.
+
+        :param scene_pos: The position of the press event in scene coordinates.
+        :return: None
+        """
+
+        if self.image:
             x = int(scene_pos.x())
             y = int(scene_pos.y())
             if 0 <= x < self.image.width and 0 <= y < self.image.height:
@@ -1210,39 +1022,43 @@ class ImageSegmentationApp(QMainWindow):
                 self.current_path_item.setPen(QPen(self.current_color, 2))
                 self.scene.addItem(self.current_path_item)
 
-
     def handle_left_move(self, scene_pos: QPoint) -> None:
-        if self.auto_pick_mode and self.drawing and self.current_path_item:
-            # Adjust auto-picked path
-            x = int(scene_pos.x())
-            y = int(scene_pos.y())
-            if 0 <= x < self.image.width and 0 <= y < self.image.height:
-                self.current_path.lineTo(x, y)
-                self.current_path_item.setPath(self.current_path)
-                self.current_label.append(QPoint(x, y))
-        elif self.drawing and self.image:  # Original manual drawing code
-            x = int(scene_pos.x())
-            y = int(scene_pos.y())
-            if 0 <= x < self.image.width and 0 <= y < self.image.height:
-                self.current_label.append(QPoint(x, y))
-                self.current_path.lineTo(x, y)
-                self.current_path_item.setPath(self.current_path)
+        """
+        Handle a left mouse button move event.
 
+        If the move event occurs while drawing is active and within the image
+        boundaries, this method appends the new position to the current label 
+        path and updates the corresponding QGraphicsPathItem in the scene.
+
+        :param scene_pos: The position of the move event in scene coordinates.
+        :type scene_pos: QPoint
+        :return: None
+        """
+
+        if self.drawing and self.image:
+            x = int(scene_pos.x())
+            y = int(scene_pos.y())
+            if 0 <= x < self.image.width and 0 <= y < self.image.height:
+                self.current_label.append(QPoint(x, y))
+                self.current_path.lineTo(x, y)
+                self.current_path_item.setPath(self.current_path)
 
     def handle_left_release(self, scene_pos: QPoint) -> None:
-        if self.auto_pick_mode and self.drawing:
-            # Finalize auto-picked path
+        """
+        Handle a left mouse button release event.
+
+        If the release event occurs while drawing is active, this method stops
+        drawing, checks if the polygon is closed by right-clicking, and fills the
+        label if it is.
+
+        :param scene_pos: The position of the release event in scene coordinates.
+        :type scene_pos: QPoint
+        :return: None
+        """
+
+        if self.drawing:
             self.drawing = False
-            if len(self.current_label) > 2:
-                # Close the polygon
-                self.current_label.append(self.current_label[0])
-                self.current_path.lineTo(self.current_label[0].x(), self.current_label[0].y())
-                self.current_path_item.setPath(self.current_path)
-                self.fill_label()
-                self.auto_pick_mode = False
-                self.auto_pick_button.setChecked(False)
-        elif self.drawing:  # Original manual drawing code
-            self.drawing = False
+            # Check if right-click to close polygon
             if len(self.current_label) > 2:
                 self.current_label.append(self.current_label[0])
                 self.current_path.lineTo(self.current_label[0].x(), self.current_label[0].y())

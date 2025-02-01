@@ -335,80 +335,10 @@ class ImageSegmentationApp(QMainWindow):
         else:
             self.view.viewport().setCursor(Qt.ArrowCursor)
 
-    # def auto_pick_horizon(self, seed_x: int, seed_y: int):
-    #     """Automatically track seismic horizon from seed point"""
-    #     if self.processed_data is None or self.image is None:
-    #         return
-        
-    #     data = self.processed_data
-    #     height, width = data.shape
-        
-    #     # Configure picking parameters
-    #     search_window = 5  # pixels to search vertically
-    #     correlation_window = 3  # pixels for similarity comparison
-    #     max_traces = 100  # maximum traces to pick in each direction
-        
-    #     # Initialize tracking
-    #     horizon = []
-    #     directions = [1, -1]  # Right then left
-        
-    #     for direction in directions:
-    #         current_x = seed_x
-    #         current_y = seed_y
-    #         last_valid = (current_x, current_y)
-            
-    #         for _ in range(max_traces):
-    #             next_x = current_x + direction
-    #             if next_x < 0 or next_x >= width:
-    #                 break
-                
-    #             # Define search range
-    #             y_min = max(0, current_y - search_window)
-    #             y_max = min(height-1, current_y + search_window)
-                
-    #             best_y = current_y
-    #             best_similarity = -np.inf
-                
-    #             # Search for most similar trace pattern
-    #             for y in range(y_min, y_max+1):
-    #                 # Define correlation windows
-    #                 ref_start = max(0, current_y - correlation_window)
-    #                 ref_end = min(height, current_y + correlation_window + 1)
-    #                 target_start = max(0, y - correlation_window)
-    #                 target_end = min(height, y + correlation_window + 1)
-                    
-    #                 # Calculate normalized cross-correlation
-    #                 ref = data[ref_start:ref_end, current_x]
-    #                 target = data[target_start:target_end, next_x]
-                    
-    #                 if ref.size != target.size:
-    #                     continue
-                        
-    #                 similarity = np.corrcoef(ref, target)[0, 1]
-                    
-    #                 if similarity > best_similarity:
-    #                     best_similarity = similarity
-    #                     best_y = y
-                
-    #             # Validate and update position
-    #             if best_similarity > 0.5:  # Similarity threshold
-    #                 current_x = next_x
-    #                 current_y = best_y
-    #                 last_valid = (current_x, current_y)
-    #                 horizon.append((current_x, current_y))
-    #             else:
-    #                 # Use last valid position and stop
-    #                 horizon.append(last_valid)
-    #                 break
-        
-    #     # Sort points by X coordinate
-    #     horizon.sort(key=lambda p: p[0])
-    #     return horizon
-
     def auto_pick_horizon(self, seed_x: int, seed_y: int):
         """Automatically track seismic horizon from seed point"""
         if self.processed_data is None or self.image is None:
-            return []
+            return
         
         data = self.processed_data
         height, width = data.shape
@@ -435,9 +365,11 @@ class ImageSegmentationApp(QMainWindow):
                 # Define search range
                 y_min = max(0, current_y - search_window)
                 y_max = min(height-1, current_y + search_window)
+                
                 best_y = current_y
                 best_similarity = -np.inf
                 
+                # Search for most similar trace pattern
                 for y in range(y_min, y_max+1):
                     # Define correlation windows
                     ref_start = max(0, current_y - correlation_window)
@@ -445,25 +377,14 @@ class ImageSegmentationApp(QMainWindow):
                     target_start = max(0, y - correlation_window)
                     target_end = min(height, y + correlation_window + 1)
                     
-                    # Extract reference and target traces
+                    # Calculate normalized cross-correlation
                     ref = data[ref_start:ref_end, current_x]
                     target = data[target_start:target_end, next_x]
                     
-                    # Skip if window sizes don't match
                     if ref.size != target.size:
                         continue
-                    
-                    # Calculate similarity manually to avoid division by zero
-                    ref_mean = np.mean(ref)
-                    target_mean = np.mean(target)
-                    covariance = np.mean((ref - ref_mean) * (target - target_mean))
-                    std_ref = np.std(ref)
-                    std_target = np.std(target)
-                    
-                    if std_ref > 0 and std_target > 0:
-                        similarity = covariance / (std_ref * std_target)
-                    else:
-                        similarity = 0.0  # Handle zero-variance cases
+                        
+                    similarity = np.corrcoef(ref, target)[0, 1]
                     
                     if similarity > best_similarity:
                         best_similarity = similarity
@@ -679,76 +600,43 @@ class ImageSegmentationApp(QMainWindow):
 
             self._update_display()
 
-    # def apply_hog(self) -> None:
-    #     """
-    #     Apply Histogram of Oriented Gradients (HOG) feature extraction.
-
-    #     Converts the processed image data to uint8 and calculates the HOG features.
-    #     The HOG image is normalized and used to update the display.
-
-    #     This method updates the internal processed_data with the normalized HOG image.
-    #     """
-
-    #     if self.processed_data is not None:
-    #         image_array = img_as_ubyte(self.processed_data)  # Convert to uint8
-            
-    #         # Calculate HOG
-    #         _, hog_image = hog(image_array, 
-    #                         orientations=8, 
-    #                         pixels_per_cell=(16, 16),
-    #                         cells_per_block=(1, 1), 
-    #                         visualize=True,
-    #                         channel_axis=None)
-            
-    #         # # Normalize HOG image
-    #         # hog_image = hog_image.astype(np.float32)
-    #         # hog_image = (hog_image - hog_image.min()) / (hog_image.max() - hog_image.min())
-    #         # self.processed_data = hog_image
-    #         # self._update_display()
-
-    #         # Handle zero-variance cases
-    #         hog_min = hog_image.min()
-    #         hog_range = hog_image.max() - hog_min
-    #         if hog_range > 0:
-    #             hog_image = (hog_image - hog_min) / hog_range
-    #         else:  # Handle uniform images
-    #             hog_image = np.zeros_like(hog_image)
-                
-    #         self.processed_data = hog_image.astype(np.float32)
-    #         self._update_display()
-
     def apply_hog(self) -> None:
+        """
+        Apply Histogram of Oriented Gradients (HOG) feature extraction.
+
+        Converts the processed image data to uint8 and calculates the HOG features.
+        The HOG image is normalized and used to update the display.
+
+        This method updates the internal processed_data with the normalized HOG image.
+        """
+
         if self.processed_data is not None:
             image_array = img_as_ubyte(self.processed_data)  # Convert to uint8
             
-            # Add a small noise to uniform regions to avoid division by zero
-            if np.var(image_array) == 0:
-                image_array = image_array + np.random.uniform(-1, 1, size=image_array.shape).astype(np.uint8)
-            
             # Calculate HOG
-            try:
-                _, hog_image = hog(
-                    image_array,
-                    orientations=8,
-                    pixels_per_cell=(16, 16),
-                    cells_per_block=(1, 1),
-                    visualize=True,
-                    channel_axis=None
-                )
-                
-                # Normalize the HOG image
-                hog_min = hog_image.min()
-                hog_max = hog_image.max()
-                if hog_max > hog_min:  # Avoid division by zero
-                    hog_image = (hog_image - hog_min) / (hog_max - hog_min)
-                else:
-                    hog_image = np.zeros_like(hog_image)  # Handle uniform images
-                
-                self.processed_data = hog_image.astype(np.float32)
-                self._update_display()
+            _, hog_image = hog(image_array, 
+                            orientations=8, 
+                            pixels_per_cell=(16, 16),
+                            cells_per_block=(1, 1), 
+                            visualize=True,
+                            channel_axis=None)
             
-            except Exception as e:
-                self.statusBar.showMessage(f"Error applying HOG: {str(e)}", 5000)
+            # # Normalize HOG image
+            # hog_image = hog_image.astype(np.float32)
+            # hog_image = (hog_image - hog_image.min()) / (hog_image.max() - hog_image.min())
+            # self.processed_data = hog_image
+            # self._update_display()
+
+            # Handle zero-variance cases
+            hog_min = hog_image.min()
+            hog_range = hog_image.max() - hog_min
+            if hog_range > 0:
+                hog_image = (hog_image - hog_min) / hog_range
+            else:  # Handle uniform images
+                hog_image = np.zeros_like(hog_image)
+                
+            self.processed_data = hog_image.astype(np.float32)
+            self._update_display()
 
     # New attributes - seismic attributes
     def apply_semblance(self) -> None:
