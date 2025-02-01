@@ -361,6 +361,23 @@ class ImageSegmentationApp(QMainWindow):
         else:
             self.view.viewport().setCursor(Qt.ArrowCursor)
 
+    # def close_auto_pick_polygon(self):
+    #     """Close and finalize auto-picked polygon"""
+    #     if self.auto_pick_mode and self.current_label:
+    #         if len(self.current_label) > 2:
+    #             # Close the polygon
+    #             self.current_path.lineTo(self.current_label[0].x(), self.current_label[0].y())
+    #             self.current_path_item.setPath(self.current_path)
+    #             self.current_label.append(self.current_label[0])
+    #             self.fill_label()
+            
+    #         # Reset auto-pick state
+    #         self.auto_pick_mode = False
+    #         self.toggle_auto_pick_mode()
+    #         self.current_label = []
+    #         self.current_path_item = None
+    #         self.drawing = False
+
     def close_current_polygon(self):
         """Close and finalize both manual and auto-pick polygons"""
         if not self.current_label or len(self.current_label) < 3:
@@ -551,6 +568,7 @@ class ImageSegmentationApp(QMainWindow):
         self.processed_data = np.array(img_gray)
         self.color_palette = None
         self._update_display()
+
 
 
     def apply_gabor(self) -> None:
@@ -1171,6 +1189,44 @@ class ImageSegmentationApp(QMainWindow):
 
 
     def handle_left_release(self, scene_pos: QPoint) -> None:
+        # if self.auto_pick_mode and self.drawing:
+        #     # Finalize auto-picked path
+        #     self.drawing = False
+        #     if len(self.current_label) > 2:
+        #         # Close the polygon
+        #         self.current_label.append(self.current_label[0])
+        #         self.current_path.lineTo(self.current_label[0].x(), self.current_label[0].y())
+        #         self.current_path_item.setPath(self.current_path)
+        #         self.fill_label()
+        #         self.auto_pick_mode = False
+        #         self.auto_pick_button.setChecked(False)
+        # elif self.drawing:  # Original manual drawing code
+        #     self.drawing = False
+        #     if len(self.current_label) > 2:
+        #         self.current_label.append(self.current_label[0])
+        #         self.current_path.lineTo(self.current_label[0].x(), self.current_label[0].y())
+        #         self.current_path_item.setPath(self.current_path)
+        #         self.fill_label()
+
+        # if self.auto_pick_mode and self.drawing:
+        #     # Don't auto-close, just stop drawing
+        #     self.drawing = False
+        #     self.statusBar.showMessage("Auto-pick complete - Press 'C' to close and finalize", 3000)
+        # elif self.drawing:  # Original manual drawing code
+        #     self.drawing = False
+        #     if len(self.current_label) > 2:
+        #         # Manual mode still auto-closes
+        #         self.current_label.append(self.current_label[0])
+        #         self.current_path.lineTo(self.current_label[0].x(), self.current_label[0].y())
+        #         self.current_path_item.setPath(self.current_path)
+        #         self.fill_label()
+
+        # if self.drawing:
+        #     self.drawing = False
+        #     msg = "Drawing stopped - Press 'C' to close and save" 
+        #     if self.auto_pick_mode:
+        #         msg = "Auto-pick complete - Press 'C' to finalize"
+        #     self.statusBar.showMessage(msg, 3000)
 
         if self.drawing:
             self.drawing = False
@@ -1211,7 +1267,7 @@ class ImageSegmentationApp(QMainWindow):
 
         if len(self.current_label) < 3 or self.current_label[0] != self.current_label[-1]:
             return
-      
+        
         if self.image and self.current_label:
             polygon = [(p.x(), p.y()) for p in self.current_label]
             mask = Image.new('L', self.image.size, 0)
@@ -1235,6 +1291,87 @@ class ImageSegmentationApp(QMainWindow):
                 'path': self.current_path_item
             })
             self.redo_stack.clear()  # Clear redo stack on new action
+            # self.labels.append((self.current_label.copy(), self.current_color))   # Add to labels list
+
+            # self.save_label_log()
+
+            # # Only add to labels list if closed properly
+            # if self.current_label[0] == self.current_label[-1]:
+            #     self.labels.append((self.current_label.copy(), self.current_color))
+            #     self.save_label_log()
+
+            # label_name = ['First', 'Second', 'Third', 'Fourth', 'Fifth']
+            # nth_label = label_name[self.label_counter] if self.label_counter < len(label_name) else f'{self.label_counter + 1}th'
+            # self.statusBar.showMessage(f'{nth_label} label created successfully!', 3000)
+            # self.label_counter += 1
+
+            # # Clear current drawing state
+            # self.current_label = []
+            # self.current_path_item = None
+
+
+
+    # def reset_labels(self) -> None:
+    #     """Reset only labels while preserving image processing state"""
+    #     try:
+    #         # Remove all label-related graphics items from the scene
+    #         for entry in self.undo_stack + self.redo_stack:
+    #             if entry['overlay'].scene() == self.scene:
+    #                 self.scene.removeItem(entry['overlay'])
+    #             if entry['path'].scene() == self.scene:
+    #                 self.scene.removeItem(entry['path'])
+
+    #         # Clear current drawing if in progress
+    #         if self.current_path_item and self.current_path_item.scene() == self.scene:
+    #             self.scene.removeItem(self.current_path_item)
+                
+    #         # Reset label tracking structures
+    #         self.labels.clear()
+    #         self.undo_stack.clear()
+    #         self.redo_stack.clear()
+    #         self.label_counter = 0
+    #         self.current_label = []
+    #         self.current_path_item = None
+
+    #         # Preserve current image state
+    #         if self.processed_data is not None:
+    #             self._update_display()  # Refresh display without changing processed data
+
+    #         self.statusBar.showMessage("Labels reset - processing preserved", 3000)
+
+    #     except Exception as e:
+    #         self.statusBar.showMessage(f"Reset error: {str(e)}", 5000)
+
+    # def reset_labels(self) -> None:
+    #     """Reset only labels while preserving image processing state."""
+    #     try:
+    #         # Remove finalized label graphics from the scene.
+    #         for entry in self.undo_stack + self.redo_stack:
+    #             if entry.get('overlay') and entry['overlay'].scene() == self.scene:
+    #                 self.scene.removeItem(entry['overlay'])
+    #             if entry.get('path') and entry['path'].scene() == self.scene:
+    #                 self.scene.removeItem(entry['path'])
+
+    #         # Also remove any in-progress drawing.
+    #         if self.current_path_item and self.current_path_item.scene() == self.scene:
+    #             self.scene.removeItem(self.current_path_item)
+    #             self.current_path_item = None
+    #             self.current_label = []
+
+    #         # Clear the stacks and reset counters.
+    #         self.labels.clear()
+    #         self.undo_stack.clear()
+    #         self.redo_stack.clear()
+    #         self.label_counter = 0
+
+    #         # Refresh display (preserving image processing state).
+    #         if self.processed_data is not None:
+    #             self._update_display()
+
+    #         self.statusBar.showMessage("Labels reset - processing preserved", 3000)
+
+    #     except Exception as e:
+    #         self.statusBar.showMessage(f"Reset error: {str(e)}", 5000)
 
     def reset_labels(self) -> None:
         """Reset only labels while preserving image processing state"""
@@ -1343,6 +1480,110 @@ class ImageSegmentationApp(QMainWindow):
                 # Convert to RGB before saving to avoid alpha channel issues
                 white_bg.convert('RGB').save(file_path)
                 self.statusBar.showMessage(f'Labels saved as {file_path}', 3000)
+
+
+    # def undo(self) -> None:
+    #     if self.undo_stack:
+    #         entry = self.undo_stack.pop()
+    #         # Remove the label from the labels list
+    #         if self.labels:
+    #             self.labels.pop()
+    #         # Remove visual elements from the scene
+    #         self.scene.removeItem(entry['overlay'])
+    #         self.scene.removeItem(entry['path'])
+    #         # Add to redo stack
+    #         self.redo_stack.append(entry)
+    #         # Update counter
+    #         self.label_counter = len(self.labels)
+    #         self.statusBar.showMessage(f"Undo: Label removed ({len(self.undo_stack)} left)", 3000)
+
+    # def redo(self) -> None:
+    #     if self.redo_stack:
+    #         entry = self.redo_stack.pop()
+    #         # Add the label back to the labels list
+    #         self.labels.append(entry['label'])
+    #         # Add visual elements back to the scene
+    #         self.scene.addItem(entry['overlay'])
+    #         self.scene.addItem(entry['path'])
+    #         # Add to undo stack
+    #         self.undo_stack.append(entry)
+    #         # Update counter
+    #         self.label_counter = len(self.labels)
+    #         self.statusBar.showMessage(f"Redo: Label restored ({len(self.redo_stack)} left)", 3000)
+
+    # def undo(self) -> None:
+    #     # Handle in-progress drawings
+    #     if self.drawing:
+    #         self.scene.removeItem(self.current_path_item)
+    #         self.current_path_item = None
+    #         self.current_label = []
+    #         self.drawing = False
+    #         self.statusBar.showMessage("Drawing canceled", 3000)
+    #         return
+            
+    #     # Standard undo for closed polygons
+    #     if self.undo_stack:
+    #         entry = self.undo_stack.pop()
+    #         self.scene.removeItem(entry['overlay'])
+    #         self.scene.removeItem(entry['path'])
+    #         self.redo_stack.append(entry)
+    #         self.label_counter = len(self.undo_stack)
+    #         self.statusBar.showMessage(f"Undo: Label removed ({len(self.undo_stack)} left)", 3000)
+
+    # def undo(self) -> None:
+    # # If a drawing is in progress (even if unclosed), undo it first.
+    #     if self.drawing and self.current_path_item is not None:
+    #         # Remove the in-progress drawing from the scene.
+    #         self.scene.removeItem(self.current_path_item)
+    #         # Push an entry onto the redo stack that marks an unfinalized drawing.
+    #         self.redo_stack.append({
+    #             'label': (self.current_label.copy(), self.current_color),
+    #             'overlay': None,  # no filled overlay yet
+    #             'path': self.current_path_item
+    #         })
+    #         self.current_path_item = None
+    #         self.current_label = []
+    #         self.drawing = False
+    #         self.statusBar.showMessage("Unclosed drawing undone", 3000)
+    #         return
+
+    #     # Otherwise, perform standard undo (for finalized labels)
+    #     if self.undo_stack:
+    #         entry = self.undo_stack.pop()
+    #         # Remove both the filled overlay and the drawn path.
+    #         self.scene.removeItem(entry['overlay'])
+    #         self.scene.removeItem(entry['path'])
+    #         self.redo_stack.append(entry)
+    #         self.label_counter = len(self.undo_stack)
+    #         self.statusBar.showMessage(f"Undo: Label removed ({len(self.undo_stack)} left)", 3000)
+
+
+    # def redo(self) -> None:
+    #     if self.redo_stack:
+    #         entry = self.redo_stack.pop()
+    #         self.scene.addItem(entry['overlay'])
+    #         self.scene.addItem(entry['path'])
+    #         self.undo_stack.append(entry)
+    #         self.label_counter = len(self.undo_stack)
+    #         self.statusBar.showMessage(f"Redo: Label restored ({len(self.redo_stack)} left)", 3000)
+
+    # def redo(self) -> None:
+    #     if self.redo_stack:
+    #         entry = self.redo_stack.pop()
+    #         # If the entry is an unfinalized drawing (overlay is None), re-add the drawing.
+    #         if entry.get('overlay') is None:
+    #             self.scene.addItem(entry['path'])
+    #             self.current_path_item = entry['path']
+    #             self.current_label = entry['label'].copy()
+    #             self.drawing = True
+    #             self.statusBar.showMessage("Redo: Unclosed drawing restored", 3000)
+    #         else:
+    #             # Otherwise, it is a finalized label.
+    #             self.scene.addItem(entry['overlay'])
+    #             self.scene.addItem(entry['path'])
+    #             self.undo_stack.append(entry)
+    #             self.statusBar.showMessage(f"Redo: Label restored ({len(self.redo_stack)} left)", 3000)
+    #         self.label_counter = len(self.undo_stack)
 
     def undo(self) -> None:
         # Handle in-progress drawings

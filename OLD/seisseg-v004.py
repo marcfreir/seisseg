@@ -182,12 +182,6 @@ class ImageSegmentationApp(QMainWindow):
         exit_action = file_menu.addAction('Exit')
         exit_action.triggered.connect(self.close)
 
-        # Add close polygon shortcut
-        self.close_action = QAction(self)
-        self.close_action.setShortcut('C')
-        self.close_action.triggered.connect(self.close_current_polygon)
-        self.addAction(self.close_action)
-
         # Add Edit menu with Undo/Redo actions
         edit_menu = menu_bar.addMenu('Edit')
         undo_action = QAction('Undo', self)
@@ -259,7 +253,7 @@ class ImageSegmentationApp(QMainWindow):
         self.logo_item = QGraphicsSvgItem('img/seisseg_logo_cc.svg')
 
         self.label = QLabel()
-        self.label.setText('SeisSeg v0.0.5')
+        self.label.setText('SeisSeg v0.0.4')
         self.label.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.label)
 
@@ -269,7 +263,7 @@ class ImageSegmentationApp(QMainWindow):
         self.setWindowTitle('SeisSeg App')
 
         # Set window icon
-        icon = QIcon('img/seisseg_icon_n.png')
+        icon = QIcon('img/seisseg_icon_n.pngg')
         self.setWindowIcon(icon)
 
         # Buttons layout
@@ -342,14 +336,6 @@ class ImageSegmentationApp(QMainWindow):
             self.view.fitInView(self.logo_item, Qt.KeepAspectRatio)
 
     def toggle_auto_pick_mode(self) -> None:
-
-        if self.auto_pick_mode:
-            # Cancel any unfinished auto-pick
-            if self.current_path_item:
-                self.scene.removeItem(self.current_path_item)
-                self.current_path_item = None
-            self.current_label = []
-            
         self.auto_pick_mode = not self.auto_pick_mode
         status = "ON" if self.auto_pick_mode else "OFF"
         self.statusBar.showMessage(f"Auto-pick mode {status}", 2000)
@@ -360,27 +346,6 @@ class ImageSegmentationApp(QMainWindow):
             self.view.viewport().setCursor(Qt.CrossCursor)
         else:
             self.view.viewport().setCursor(Qt.ArrowCursor)
-
-    def close_current_polygon(self):
-        """Close and finalize both manual and auto-pick polygons"""
-        if not self.current_label or len(self.current_label) < 3:
-            self.statusBar.showMessage("Need at least 3 points to close", 3000)
-            return
-            
-        # Close the path
-        self.current_label.append(self.current_label[0])
-        self.current_path.lineTo(self.current_label[0].x(), self.current_label[0].y())
-        self.current_path_item.setPath(self.current_path)
-        
-        # Create and store label
-        self.fill_label()
-        
-        # Cleanup
-        self.current_label = []
-        self.current_path_item = None
-        if self.auto_pick_mode:
-            self.auto_pick_mode = False
-            self.toggle_auto_pick_mode()
 
 
     def auto_pick_horizon(self, seed_x: int, seed_y: int):
@@ -551,6 +516,7 @@ class ImageSegmentationApp(QMainWindow):
         self.processed_data = np.array(img_gray)
         self.color_palette = None
         self._update_display()
+
 
 
     def apply_gabor(self) -> None:
@@ -1171,22 +1137,24 @@ class ImageSegmentationApp(QMainWindow):
 
 
     def handle_left_release(self, scene_pos: QPoint) -> None:
-
-        if self.drawing:
+        if self.auto_pick_mode and self.drawing:
+            # Finalize auto-picked path
             self.drawing = False
-            msg = "Drawing stopped - Press 'C' to close and save" 
-            if self.auto_pick_mode:
-                msg = "Auto-pick complete - Press 'C' to finalize"
-            self.statusBar.showMessage(msg, 3000)
-
-            # Check if the current path is unclosed and add to undo stack
-            if len(self.current_label) >= 2 and (self.current_label[0] != self.current_label[-1]):
-                self.undo_stack.append({
-                    'label': (self.current_label.copy(), self.current_color),
-                    'overlay': None,  # No overlay for unclosed path
-                    'path': self.current_path_item
-                })
-                self.redo_stack.clear()
+            if len(self.current_label) > 2:
+                # Close the polygon
+                self.current_label.append(self.current_label[0])
+                self.current_path.lineTo(self.current_label[0].x(), self.current_label[0].y())
+                self.current_path_item.setPath(self.current_path)
+                self.fill_label()
+                self.auto_pick_mode = False
+                self.auto_pick_button.setChecked(False)
+        elif self.drawing:  # Original manual drawing code
+            self.drawing = False
+            if len(self.current_label) > 2:
+                self.current_label.append(self.current_label[0])
+                self.current_path.lineTo(self.current_label[0].x(), self.current_label[0].y())
+                self.current_path_item.setPath(self.current_path)
+                self.fill_label()
 
     def fill_label(self) -> None:
         """
@@ -1208,10 +1176,7 @@ class ImageSegmentationApp(QMainWindow):
 
         :return: None
         """
-
-        if len(self.current_label) < 3 or self.current_label[0] != self.current_label[-1]:
-            return
-      
+        
         if self.image and self.current_label:
             polygon = [(p.x(), p.y()) for p in self.current_label]
             mask = Image.new('L', self.image.size, 0)
@@ -1235,18 +1200,25 @@ class ImageSegmentationApp(QMainWindow):
                 'path': self.current_path_item
             })
             self.redo_stack.clear()  # Clear redo stack on new action
+            self.labels.append((self.current_label.copy(), self.current_color))   # Add to labels list
+
+            self.save_label_log()
+
+            label_name = ['First', 'Second', 'Third', 'Fourth', 'Fifth']
+            nth_label = label_name[self.label_counter] if self.label_counter < len(label_name) else f'{self.label_counter + 1}th'
+            self.statusBar.showMessage(f'{nth_label} label created successfully!', 3000)
+            self.label_counter += 1
+
 
     def reset_labels(self) -> None:
         """Reset only labels while preserving image processing state"""
         try:
             # Remove all label-related graphics items from the scene
             for entry in self.undo_stack + self.redo_stack:
-                overlay = entry.get('overlay')
-                if overlay is not None and overlay.scene() == self.scene:
-                    self.scene.removeItem(overlay)
-                path = entry.get('path')
-                if path is not None and path.scene() == self.scene:
-                    self.scene.removeItem(path)
+                if entry['overlay'].scene() == self.scene:
+                    self.scene.removeItem(entry['overlay'])
+                if entry['path'].scene() == self.scene:
+                    self.scene.removeItem(entry['path'])
 
             # Clear current drawing if in progress
             if self.current_path_item and self.current_path_item.scene() == self.scene:
@@ -1268,7 +1240,6 @@ class ImageSegmentationApp(QMainWindow):
 
         except Exception as e:
             self.statusBar.showMessage(f"Reset error: {str(e)}", 5000)
-
 
     def save_label_log(self) -> None:
         """
@@ -1344,42 +1315,35 @@ class ImageSegmentationApp(QMainWindow):
                 white_bg.convert('RGB').save(file_path)
                 self.statusBar.showMessage(f'Labels saved as {file_path}', 3000)
 
+
     def undo(self) -> None:
-        # Handle in-progress drawings
-        if self.drawing:
-            self.scene.removeItem(self.current_path_item)
-            self.current_path_item = None
-            self.current_label = []
-            self.drawing = False
-            self.statusBar.showMessage("Drawing canceled", 3000)
-            return
-            
-        # Standard undo for closed polygons and unclosed paths
         if self.undo_stack:
             entry = self.undo_stack.pop()
-            # Safely remove overlay if it exists
-            if entry['overlay'] is not None and entry['overlay'].scene() == self.scene:
-                self.scene.removeItem(entry['overlay'])
-            # Safely remove path if it exists
-            if entry['path'] is not None and entry['path'].scene() == self.scene:
-                self.scene.removeItem(entry['path'])
+            # Remove the label from the labels list
+            if self.labels:
+                self.labels.pop()
+            # Remove visual elements from the scene
+            self.scene.removeItem(entry['overlay'])
+            self.scene.removeItem(entry['path'])
+            # Add to redo stack
             self.redo_stack.append(entry)
-            self.label_counter = len(self.undo_stack)
+            # Update counter
+            self.label_counter = len(self.labels)
             self.statusBar.showMessage(f"Undo: Label removed ({len(self.undo_stack)} left)", 3000)
 
     def redo(self) -> None:
         if self.redo_stack:
             entry = self.redo_stack.pop()
-            # Safely add overlay if it exists
-            if entry['overlay'] is not None:
-                self.scene.addItem(entry['overlay'])
-            # Safely add path if it exists
-            if entry['path'] is not None:
-                self.scene.addItem(entry['path'])
+            # Add the label back to the labels list
+            self.labels.append(entry['label'])
+            # Add visual elements back to the scene
+            self.scene.addItem(entry['overlay'])
+            self.scene.addItem(entry['path'])
+            # Add to undo stack
             self.undo_stack.append(entry)
-            self.label_counter = len(self.undo_stack)
+            # Update counter
+            self.label_counter = len(self.labels)
             self.statusBar.showMessage(f"Redo: Label restored ({len(self.redo_stack)} left)", 3000)
-
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
