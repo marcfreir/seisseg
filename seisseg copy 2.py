@@ -259,7 +259,7 @@ class ImageSegmentationApp(QMainWindow):
         self.logo_item = QGraphicsSvgItem('img/seisseg_logo_cc.svg')
 
         self.label = QLabel()
-        self.label.setText('SeisSeg v0.0.8')
+        self.label.setText('SeisSeg v0.0.7')
         self.label.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.label)
 
@@ -315,23 +315,6 @@ class ImageSegmentationApp(QMainWindow):
         self.processed_data = None  # Holds grayscale data for processing
         self.color_palette = None   # Tracks current color palette
 
-        # Eraser mode flag and related attributes
-        self.eraser_mode = False
-        self.eraser_drawing = False
-        self.eraser_path: Optional[QPainterPath] = None
-        self.eraser_path_item: Optional[QGraphicsPathItem] = None
-
-        # Eraser action with a shortcut (e.g. "E")
-        self.eraser_action = QAction(self)
-        self.eraser_action.setShortcut('E')
-        self.eraser_action.triggered.connect(self.toggle_eraser_mode)
-        self.addAction(self.eraser_action)
-
-        # Optionally add an eraser button to your button layout:
-        self.eraser_button = QPushButton('Eraser (E)')
-        self.eraser_button.clicked.connect(self.toggle_eraser_mode)
-        button_layout.addWidget(self.eraser_button)
-
         # Initialize undo and redo stacks
         self.undo_stack = []
         self.redo_stack = []
@@ -352,6 +335,21 @@ class ImageSegmentationApp(QMainWindow):
         self.auto_pick_action.triggered.connect(self.toggle_auto_pick_mode)
         self.addAction(self.auto_pick_action)
 
+        # Eraser mode flag (initially off)
+        self.eraser_mode = False
+
+        # Add eraser action with a keyboard shortcut (e.g., "E")
+        self.eraser_action = QAction(self)
+        self.eraser_action.setShortcut('E')
+        self.eraser_action.triggered.connect(self.toggle_eraser_mode)
+        self.addAction(self.eraser_action)
+
+        # Optionally, add an eraser button to your button_layout
+        self.eraser_button = QPushButton('Eraser (E)')
+        self.eraser_button.clicked.connect(self.toggle_eraser_mode)
+        button_layout.addWidget(self.eraser_button)
+
+
     def showEvent(self, event: QShowEvent) -> None:
         """Handle window show event to fit the logo initially"""
         super().showEvent(event)
@@ -362,7 +360,7 @@ class ImageSegmentationApp(QMainWindow):
         self.eraser_mode = not self.eraser_mode
         if self.eraser_mode:
             self.statusBar.showMessage("Eraser mode ON", 2000)
-            # Change cursor to a distinctive eraser style (you may choose a custom cursor)
+            # Change cursor to indicate eraser mode (use an appropriate cursor)
             self.view.viewport().setCursor(Qt.PointingHandCursor)
         else:
             self.statusBar.showMessage("Eraser mode OFF", 2000)
@@ -1144,9 +1142,9 @@ class ImageSegmentationApp(QMainWindow):
 
     def handle_left_press(self, scene_pos: QPoint) -> None:
 
-        # If eraser mode is active, start an eraser stroke instead of a new label.
+        # If eraser mode is active, perform erasing instead of drawing.
         if self.eraser_mode:
-            self.start_eraser(scene_pos)
+            self.handle_erase(scene_pos)
             return
     
         if self.auto_pick_mode and self.image:
@@ -1171,6 +1169,7 @@ class ImageSegmentationApp(QMainWindow):
                     self.scene.addItem(self.current_path_item)
                     self.drawing = True  # Enable drawing adjustments
                 return
+            return
 
         # Original manual drawing code
         if self.image and not self.auto_pick_mode:
@@ -1187,11 +1186,6 @@ class ImageSegmentationApp(QMainWindow):
 
 
     def handle_left_move(self, scene_pos: QPoint) -> None:
-
-        if self.eraser_mode and self.eraser_drawing:
-            self.update_eraser(scene_pos)
-            return
-    
         if self.auto_pick_mode and self.drawing and self.current_path_item:
             # Adjust auto-picked path
             x = int(scene_pos.x())
@@ -1211,10 +1205,6 @@ class ImageSegmentationApp(QMainWindow):
 
     def handle_left_release(self, scene_pos: QPoint) -> None:
 
-        if self.eraser_mode and self.eraser_drawing:
-            self.finish_eraser()
-            return
-
         if self.drawing:
             self.drawing = False
             msg = "Drawing stopped - Press 'C' to close and save" 
@@ -1231,74 +1221,41 @@ class ImageSegmentationApp(QMainWindow):
                 })
                 self.redo_stack.clear()
 
-    def start_eraser(self, scene_pos: QPoint) -> None:
-        self.eraser_drawing = True
-        self.eraser_path = QPainterPath()
-        self.eraser_path.moveTo(scene_pos)
-        self.eraser_path_item = QGraphicsPathItem(self.eraser_path)
-        # Set a thick pen to simulate an eraser brush (adjust width and color as needed)
-        eraser_pen = QPen(Qt.white, 20, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
-        self.eraser_path_item.setPen(eraser_pen)
-        self.scene.addItem(self.eraser_path_item)
-
-    def update_eraser(self, scene_pos: QPoint) -> None:
-        if self.eraser_drawing and self.eraser_path is not None:
-            self.eraser_path.lineTo(scene_pos)
-            self.eraser_path_item.setPath(self.eraser_path)
-
     
-    def finish_eraser(self) -> None:
-        if not self.eraser_drawing or self.eraser_path is None:
-            return
+    def handle_erase(self, scene_pos: QPoint) -> None:
+        # Get the list of items at the clicked position.
+        # The items() method returns a list with the topmost item first.
+        items = self.scene.items(scene_pos)
+        erased = False
 
-        # For each label entry in the undo stack, try to subtract the eraser stroke.
-        for entry in self.undo_stack:
-            # entry['path'] is the QGraphicsPathItem for the label.
-            label_path_item = entry.get('path')
-            if label_path_item is None:
-                continue
-            label_path = label_path_item.path()
-            # If the eraser stroke intersects this label, subtract the eraser area.
-            if label_path.intersects(self.eraser_path):
-                new_path = label_path.subtracted(self.eraser_path)
-                label_path_item.setPath(new_path)
-                # Optionally update the overlay if the label is closed.
-                if entry.get('overlay') is not None:
-                    # Recompute the filled overlay from the modified path if possible.
-                    # (This example assumes that if the label is still closed, the first and last points match.)
-                    if new_path.elementCount() > 2:
-                        # Build a polygon from the new_path elements.
-                        polygon = []
-                        for i in range(new_path.elementCount()):
-                            el = new_path.elementAt(i)
-                            polygon.append((el.x, el.y))
-                        # Check if the path is still closed.
-                        if polygon and polygon[0] == polygon[-1]:
-                            # Recompute the overlay using your fill procedure.
-                            mask = Image.new('L', self.image.size, 0)
-                            draw = ImageDraw.Draw(mask)
-                            draw.polygon(polygon, fill=255)
-                            color_layer = Image.new('RGBA', self.image.size, entry['label'][1].name())
-                            overlay_img = Image.alpha_composite(self.image.convert('RGBA'),
-                                                                color_layer.convert('RGBA'))
-                            overlay_img.putalpha(mask)
-                            qimage = QImage(overlay_img.tobytes(), overlay_img.width, overlay_img.height,
-                                            overlay_img.width * 4, QImage.Format_RGBA8888)
-                            # Remove the old overlay and add the new one.
-                            old_overlay = entry.get('overlay')
-                            if old_overlay is not None:
-                                self.scene.removeItem(old_overlay)
-                            new_overlay_item = QGraphicsPixmapItem(QPixmap.fromImage(qimage))
-                            self.scene.addItem(new_overlay_item)
-                            entry['overlay'] = new_overlay_item
-        # Remove the eraser stroke item from the scene.
-        self.scene.removeItem(self.eraser_path_item)
-        self.eraser_path_item = None
-        self.eraser_drawing = False
-        self.eraser_path = None
-        self.statusBar.showMessage("Erasing applied", 2000)
+        # Loop through the items and see if one belongs to a label.
+        # We use the undo_stack as our record of label entries.
+        for item in items:
+            for entry in self.undo_stack:
+                # Check if this item is either the overlay or the drawn path.
+                if entry.get('overlay') == item or entry.get('path') == item:
+                    # Remove the overlay if it exists.
+                    if entry.get('overlay') is not None:
+                        self.scene.removeItem(entry['overlay'])
+                    # Remove the path if it exists.
+                    if entry.get('path') is not None:
+                        self.scene.removeItem(entry['path'])
+                    # Remove the entry from the undo stack.
+                    self.undo_stack.remove(entry)
+                    # Also remove it from self.labels if you are keeping that list.
+                    try:
+                        self.labels.remove(entry['label'])
+                    except ValueError:
+                        pass
+                    erased = True
+                    break
+            if erased:
+                break
 
-
+        if erased:
+            self.statusBar.showMessage("Erased label", 2000)
+        else:
+            self.statusBar.showMessage("No label found to erase", 2000)
 
 
     def fill_label(self) -> None:
