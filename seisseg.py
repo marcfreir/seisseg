@@ -574,6 +574,102 @@ class ImageSegmentationApp(QMainWindow):
         self.color_palette = None
         self._update_display()
 
+    # def open_image(self) -> None:
+    #     file_path, _ = QFileDialog.getOpenFileName(
+    #         self, 'Open Image', '', 'Image Files (*.png *.jpg *.jpeg *.bmp *.tif *.tiff)'
+    #     )
+
+    #     if not file_path:
+    #         return
+
+    #     # Check if we're reopening the same image
+    #     preserve_processing = False
+    #     current_processed_data = None
+    #     current_color_palette = None
+        
+    #     if hasattr(self, 'image_path') and self.image_path == file_path:
+    #         preserve_processing = True
+    #         current_processed_data = self.processed_data.copy() if self.processed_data is not None else None
+    #         current_color_palette = self.color_palette
+
+    #     self.image_path = file_path
+
+    #     # Clear the scene (this removes the logo)
+    #     self.scene.clear()
+    #     self.current_label = []
+    #     self.labels = []
+
+    #     # Clear undo/redo stacks when opening a new image
+    #     if not preserve_processing:
+    #         self.undo_stack.clear()
+    #         self.redo_stack.clear()
+    #         self.label_counter = 0
+
+    #     # Handle TIFF separately
+    #     if file_path.lower().endswith(('.tif', '.tiff')):
+    #         try:
+    #             tiff_img = tifffile.imread(file_path)
+
+    #             # Ensure image is in a displayable format (uint8)
+    #             if tiff_img.dtype not in [np.uint8, np.uint16]:
+    #                 tiff_img = (255 * (tiff_img - np.min(tiff_img)) / (np.max(tiff_img) - np.min(tiff_img))).astype(np.uint8)
+
+    #             # Handle different TIFF shapes
+    #             if len(tiff_img.shape) == 2:  # Grayscale
+    #                 self.image = Image.fromarray(tiff_img, mode='L')
+    #             elif len(tiff_img.shape) == 3:
+    #                 if tiff_img.shape[0] in [3, 4]:
+    #                     tiff_img = np.transpose(tiff_img, (1, 2, 0))
+                    
+    #                 if tiff_img.shape[2] == 3:
+    #                     self.image = Image.fromarray(tiff_img, mode='RGB')
+    #                 elif tiff_img.shape[2] == 4:
+    #                     self.image = Image.fromarray(tiff_img, mode='RGBA')
+    #                 else:
+    #                     self.statusBar.showMessage(f"Unsupported TIFF format: {tiff_img.shape}", 5000)
+    #                     return
+    #             else:
+    #                 self.statusBar.showMessage(f"Unknown TIFF shape: {tiff_img.shape}", 5000)
+    #                 return
+
+    #         except Exception as e:
+    #             self.statusBar.showMessage(f"Error opening TIFF: {str(e)}", 5000)
+    #             return
+    #     else:
+    #         try:
+    #             self.image = Image.open(file_path).convert('RGB')
+    #         except Exception as e:
+    #             self.statusBar.showMessage(f"Error opening image: {str(e)}", 5000)
+    #             return
+
+    #     # Display the image
+    #     qimage_format = QImage.Format_Grayscale8 if self.image.mode == 'L' else QImage.Format_RGB888
+    #     qimage = QImage(self.image.tobytes(), self.image.width, self.image.height,
+    #                    self.image.width * (1 if self.image.mode == 'L' else 3), qimage_format)
+    #     pixmap = QPixmap.fromImage(qimage)
+        
+    #     if hasattr(self, 'image_item'):
+    #         self.scene.removeItem(self.image_item)
+            
+    #     self.image_item = QGraphicsPixmapItem(pixmap)
+    #     self.scene.addItem(self.image_item)
+    #     self.scene.setSceneRect(0, 0, self.image.width, self.image.height)
+    #     self.view.fitInView(self.image_item, Qt.KeepAspectRatio)
+    #     self.statusBar.showMessage(f'Image opened: {file_path}')
+
+    #     # Handle processing data
+    #     self.original_image = self.image.copy()
+        
+    #     if preserve_processing:
+    #         self.processed_data = current_processed_data
+    #         self.color_palette = current_color_palette
+    #     else:
+    #         img_gray = self.original_image.convert('L') if self.original_image.mode != 'L' else self.original_image.copy()
+    #         self.processed_data = np.array(img_gray)
+    #         self.color_palette = None
+
+    #     self._update_display()
+
 
     def apply_gabor(self) -> None:
         """Apply Gabor filter to current image.
@@ -1302,36 +1398,96 @@ class ImageSegmentationApp(QMainWindow):
             self.statusBar.showMessage(f'{nth_label} label created successfully!', 3000)
             self.label_counter += 1
 
+    # def reset_labels(self) -> None:
+    #     """
+    #     Resets the labels and clears the scene.
+
+    #     This method clears all existing labels and the scene, then re-adds the image
+    #     to the scene if it is set. It also resets the label counter.
+
+    #     Preconditions:
+    #     - `self.image` may be set to a valid image or None.
+
+    #     Postconditions:
+    #     - The scene is cleared of all items.
+    #     - The image is re-added to the scene if it exists.
+    #     - The labels list is cleared.
+    #     - The label counter is reset to zero.
+
+    #     :return: None
+    #     """
+
+    #     self.scene.clear()
+    #     if self.image:
+    #         qimage = QImage(self.image.tobytes(), self.image.width, self.image.height, 
+    #                        self.image.width * 3, QImage.Format_RGB888)
+    #         pixmap = QPixmap.fromImage(qimage)
+    #         self.image_item = QGraphicsPixmapItem(pixmap)
+    #         self.scene.addItem(self.image_item)
+    #     self.labels = []
+    #     self.undo_stack.clear()
+    #     self.redo_stack.clear()
+    #     self.label_counter = 0
+
+    # def reset_labels(self) -> None:
+    #     # Clear current drawing if in progress
+    #     if self.current_path_item:
+    #         self.scene.removeItem(self.current_path_item)
+    #         self.current_path_item = None
+
+    #     # Remove all label overlays and paths from the scene
+    #     for entry in self.undo_stack + self.redo_stack:
+    #         self.scene.removeItem(entry['overlay'])
+    #         self.scene.removeItem(entry['path'])
+
+    #     # Reset label tracking structures
+    #     self.labels = []
+    #     self.undo_stack.clear()
+    #     self.redo_stack.clear()
+    #     self.label_counter = 0
+
+    #     # Keep the base image visible by recreating it
+    #     if self.image:
+    #         qimage = QImage(self.image.tobytes(), 
+    #                     self.image.width, self.image.height,
+    #                     self.image.width * (3 if self.image.mode == 'RGB' else 1),
+    #                     QImage.Format_RGB888 if self.image.mode == 'RGB' 
+    #                     else QImage.Format_Grayscale8)
+    #         pixmap = QPixmap.fromImage(qimage)
+    #         self.image_item.setPixmap(pixmap)
+
+    #     self.statusBar.showMessage("All labels cleared", 3000)
+
     def reset_labels(self) -> None:
-        """
-        Resets the labels and clears the scene.
+        """Reset only labels while preserving image processing state"""
+        try:
+            # Remove all label-related graphics items from the scene
+            for entry in self.undo_stack + self.redo_stack:
+                if entry['overlay'].scene() == self.scene:
+                    self.scene.removeItem(entry['overlay'])
+                if entry['path'].scene() == self.scene:
+                    self.scene.removeItem(entry['path'])
 
-        This method clears all existing labels and the scene, then re-adds the image
-        to the scene if it is set. It also resets the label counter.
+            # Clear current drawing if in progress
+            if self.current_path_item and self.current_path_item.scene() == self.scene:
+                self.scene.removeItem(self.current_path_item)
+                
+            # Reset label tracking structures
+            self.labels.clear()
+            self.undo_stack.clear()
+            self.redo_stack.clear()
+            self.label_counter = 0
+            self.current_label = []
+            self.current_path_item = None
 
-        Preconditions:
-        - `self.image` may be set to a valid image or None.
+            # Preserve current image state
+            if self.processed_data is not None:
+                self._update_display()  # Refresh display without changing processed data
 
-        Postconditions:
-        - The scene is cleared of all items.
-        - The image is re-added to the scene if it exists.
-        - The labels list is cleared.
-        - The label counter is reset to zero.
+            self.statusBar.showMessage("Labels reset - processing preserved", 3000)
 
-        :return: None
-        """
-
-        self.scene.clear()
-        if self.image:
-            qimage = QImage(self.image.tobytes(), self.image.width, self.image.height, 
-                           self.image.width * 3, QImage.Format_RGB888)
-            pixmap = QPixmap.fromImage(qimage)
-            self.image_item = QGraphicsPixmapItem(pixmap)
-            self.scene.addItem(self.image_item)
-        self.labels = []
-        self.undo_stack.clear()
-        self.redo_stack.clear()
-        self.label_counter = 0
+        except Exception as e:
+            self.statusBar.showMessage(f"Reset error: {str(e)}", 5000)
 
     def save_label_log(self) -> None:
         """
