@@ -497,10 +497,10 @@ class ImageSegmentationApp(QMainWindow):
         height, width = data.shape
         
         # Configure picking parameters
-        search_window = 5  # pixels to search vertically
-        correlation_window = 3  # pixels for similarity comparison
+        search_window = 2  # pixels to search vertically
+        correlation_window = 2  # pixels for similarity comparison
         max_traces = 100  # maximum traces to pick in each direction
-        
+
         # Initialize tracking
         horizon = []
         directions = [1, -1]  # Right then left
@@ -1313,7 +1313,7 @@ class ImageSegmentationApp(QMainWindow):
         self.eraser_path.moveTo(scene_pos)
         self.eraser_path_item = QGraphicsPathItem(self.eraser_path)
         # Set a thick pen to simulate an eraser brush (adjust width and color as needed)
-        eraser_pen = QPen(Qt.white, 20, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+        eraser_pen = QPen(Qt.white, 5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
         self.eraser_path_item.setPen(eraser_pen)
         self.scene.addItem(self.eraser_path_item)
 
