@@ -336,7 +336,7 @@ class ImageSegmentationApp(QMainWindow):
         self.logo_item = QGraphicsSvgItem('img/seisseg_logo_cc.svg')
 
         self.label = QLabel()
-        self.label.setText('SeisSeg v0.1.1')
+        self.label.setText('SeisSeg v0.0.9')
         self.label.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.label)
 
@@ -1322,52 +1322,136 @@ class ImageSegmentationApp(QMainWindow):
             self.eraser_path.lineTo(scene_pos)
             self.eraser_path_item.setPath(self.eraser_path)
 
+    
+    # def finish_eraser(self) -> None:
+    #     if not self.eraser_drawing or self.eraser_path is None:
+    #         return
+
+    #     # For each label entry in the undo stack, try to subtract the eraser stroke.
+    #     for entry in self.undo_stack:
+    #         # entry['path'] is the QGraphicsPathItem for the label.
+    #         label_path_item = entry.get('path')
+    #         if label_path_item is None:
+    #             continue
+    #         label_path = label_path_item.path()
+    #         # If the eraser stroke intersects this label, subtract the eraser area.
+    #         if label_path.intersects(self.eraser_path):
+    #             new_path = label_path.subtracted(self.eraser_path)
+    #             label_path_item.setPath(new_path)
+    #             # Optionally update the overlay if the label is closed.
+    #             if entry.get('overlay') is not None:
+    #                 # Recompute the filled overlay from the modified path if possible.
+    #                 # (This example assumes that if the label is still closed, the first and last points match.)
+    #                 if new_path.elementCount() > 2:
+    #                     # Build a polygon from the new_path elements.
+    #                     polygon = []
+    #                     for i in range(new_path.elementCount()):
+    #                         el = new_path.elementAt(i)
+    #                         polygon.append((el.x, el.y))
+    #                     # Check if the path is still closed.
+    #                     if polygon and polygon[0] == polygon[-1]:
+    #                         # Recompute the overlay using your fill procedure.
+    #                         mask = Image.new('L', self.image.size, 0)
+    #                         draw = ImageDraw.Draw(mask)
+    #                         draw.polygon(polygon, fill=255)
+    #                         color_layer = Image.new('RGBA', self.image.size, entry['label'][1].name())
+    #                         overlay_img = Image.alpha_composite(self.image.convert('RGBA'),
+    #                                                             color_layer.convert('RGBA'))
+    #                         overlay_img.putalpha(mask)
+    #                         qimage = QImage(overlay_img.tobytes(), overlay_img.width, overlay_img.height,
+    #                                         overlay_img.width * 4, QImage.Format_RGBA8888)
+    #                         # Remove the old overlay and add the new one.
+    #                         old_overlay = entry.get('overlay')
+    #                         if old_overlay is not None:
+    #                             self.scene.removeItem(old_overlay)
+    #                         new_overlay_item = QGraphicsPixmapItem(QPixmap.fromImage(qimage))
+    #                         self.scene.addItem(new_overlay_item)
+    #                         entry['overlay'] = new_overlay_item
+    #     # Remove the eraser stroke item from the scene.
+    #     self.scene.removeItem(self.eraser_path_item)
+    #     self.eraser_path_item = None
+    #     self.eraser_drawing = False
+    #     self.eraser_path = None
+    #     self.statusBar.showMessage("Erasing applied", 2000)
 
     def finish_eraser(self) -> None:
         if not self.eraser_drawing or self.eraser_path is None:
             return
 
-        # For each label in the undo stack, try to subtract the eraser stroke.
-        for entry in self.undo_stack:
+        # Create a copy of the undo stack to iterate safely
+        stack_copy = list(self.undo_stack)
+        modified_entries = []
+
+        for entry in stack_copy:
             label_path_item = entry.get('path')
-            if label_path_item is None:
+            if not label_path_item or label_path_item.scene() != self.scene:
                 continue
+
             label_path = label_path_item.path()
-            # If the eraser stroke intersects this label, subtract the eraser area.
             if label_path.intersects(self.eraser_path):
+                # Store original state for undo
+                modified_entries.append({
+                    'original_entry': entry,
+                    'original_path': label_path_item.path(),
+                    'original_overlay': entry.get('overlay')
+                })
+
+                # Update the path
                 new_path = label_path.subtracted(self.eraser_path)
                 label_path_item.setPath(new_path)
-                # Optionally update the overlay if the label is closed.
-                if entry.get('overlay') is not None:
-                    # Only remove the overlay if it is in the current scene.
-                    if entry.get('overlay').scene() == self.scene:
-                        self.scene.removeItem(entry.get('overlay'))
-                    # Recompute the overlay from the modified path if possible.
-                    if new_path.elementCount() > 2:
-                        polygon = []
-                        for i in range(new_path.elementCount()):
-                            el = new_path.elementAt(i)
-                            polygon.append((el.x, el.y))
-                        if polygon and polygon[0] == polygon[-1]:
-                            mask = Image.new('L', self.image.size, 0)
-                            draw = ImageDraw.Draw(mask)
-                            draw.polygon(polygon, fill=255)
-                            color_layer = Image.new('RGBA', self.image.size, entry['label'][1].name())
-                            overlay_img = Image.alpha_composite(self.image.convert('RGBA'),
-                                                                color_layer.convert('RGBA'))
-                            overlay_img.putalpha(mask)
-                            qimage = QImage(overlay_img.tobytes(), overlay_img.width, overlay_img.height,
-                                            overlay_img.width * 4, QImage.Format_RGBA8888)
-                            new_overlay_item = QGraphicsPixmapItem(QPixmap.fromImage(qimage))
-                            self.scene.addItem(new_overlay_item)
-                            entry['overlay'] = new_overlay_item
-        # Remove the eraser stroke item if it is in the scene.
+
+                # Update overlay if exists and path is closed
+                if entry.get('overlay') and new_path.elementCount() > 2:
+                    self.update_overlay(entry, new_path)
+
+        # Add erase operation to undo stack
+        if modified_entries:
+            self.undo_stack.append({
+                'type': 'erase',
+                'operations': modified_entries
+            })
+            self.redo_stack.clear()
+
+        # Safely remove eraser graphics
         if self.eraser_path_item and self.eraser_path_item.scene() == self.scene:
             self.scene.removeItem(self.eraser_path_item)
+            
         self.eraser_path_item = None
         self.eraser_drawing = False
         self.eraser_path = None
         self.statusBar.showMessage("Erasing applied", 2000)
+
+    def update_overlay(self, entry, new_path):
+        """Update the fill overlay for a modified path"""
+        # Remove old overlay
+        old_overlay = entry.get('overlay')
+        if old_overlay and old_overlay.scene() == self.scene:
+            self.scene.removeItem(old_overlay)
+
+        # Create new overlay if path is closed
+        polygon = []
+        for i in range(new_path.elementCount()):
+            el = new_path.elementAt(i)
+            polygon.append((el.x, el.y))
+        
+        if len(polygon) >= 3 and polygon[0] == polygon[-1]:
+            mask = Image.new('L', self.image.size, 0)
+            draw = ImageDraw.Draw(mask)
+            draw.polygon(polygon, fill=255)
+            
+            color = entry['label'][1]
+            color_layer = Image.new('RGBA', self.image.size, color.name())
+            overlay_img = Image.alpha_composite(self.image.convert('RGBA'),
+                                            color_layer.convert('RGBA'))
+            overlay_img.putalpha(mask)
+            
+            qimage = QImage(overlay_img.tobytes(), overlay_img.width, overlay_img.height,
+                        overlay_img.width * 4, QImage.Format_RGBA8888)
+            new_overlay = QGraphicsPixmapItem(QPixmap.fromImage(qimage))
+            self.scene.addItem(new_overlay)
+            entry['overlay'] = new_overlay
+
+
 
 
     def fill_label(self) -> None:
@@ -1418,23 +1502,61 @@ class ImageSegmentationApp(QMainWindow):
             })
             self.redo_stack.clear()  # Clear redo stack on new action
 
-    def reset_labels(self) -> None:
-        """Reset only labels while preserving image processing state"""
-        try:
-            # Remove all label-related graphics items from the scene
-            for entry in self.undo_stack + self.redo_stack:
-                overlay = entry.get('overlay')
-                if overlay is not None and overlay.scene() == self.scene:
-                    self.scene.removeItem(overlay)
-                path = entry.get('path')
-                if path is not None and path.scene() == self.scene:
-                    self.scene.removeItem(path)
+    # def reset_labels(self) -> None:
+    #     """Reset only labels while preserving image processing state"""
+    #     try:
+    #         # Remove all label-related graphics items from the scene
+    #         for entry in self.undo_stack + self.redo_stack:
+    #             overlay = entry.get('overlay')
+    #             if overlay is not None and overlay.scene() == self.scene:
+    #                 self.scene.removeItem(overlay)
+    #             path = entry.get('path')
+    #             if path is not None and path.scene() == self.scene:
+    #                 self.scene.removeItem(path)
 
-            # Clear current drawing if in progress
+    #         # Clear current drawing if in progress
+    #         if self.current_path_item and self.current_path_item.scene() == self.scene:
+    #             self.scene.removeItem(self.current_path_item)
+                
+    #         # Reset label tracking structures
+    #         self.labels.clear()
+    #         self.undo_stack.clear()
+    #         self.redo_stack.clear()
+    #         self.label_counter = 0
+    #         self.current_label = []
+    #         self.current_path_item = None
+
+    #         # Preserve current image state
+    #         if self.processed_data is not None:
+    #             self._update_display()  # Refresh display without changing processed data
+
+    #         self.statusBar.showMessage("Labels reset - processing preserved", 3000)
+
+    #     except Exception as e:
+    #         self.statusBar.showMessage(f"Reset error: {str(e)}", 5000)
+
+    def reset_labels(self) -> None:
+        try:
+            # Safe removal with scene checks
+            items_to_remove = []
+            
+            # Collect all items from undo/redo stacks
+            for entry in self.undo_stack + self.redo_stack:
+                if entry.get('overlay') and entry['overlay'].scene() == self.scene:
+                    items_to_remove.append(entry['overlay'])
+                if entry.get('path') and entry['path'].scene() == self.scene:
+                    items_to_remove.append(entry['path'])
+            
+            # Remove collected items
+            for item in items_to_remove:
+                if item.scene() == self.scene:
+                    self.scene.removeItem(item)
+
+            # Clear current drawing if valid
             if self.current_path_item and self.current_path_item.scene() == self.scene:
                 self.scene.removeItem(self.current_path_item)
-                
-            # Reset label tracking structures
+                    
+            # Reset tracking structures
             self.labels.clear()
             self.undo_stack.clear()
             self.redo_stack.clear()
@@ -1442,9 +1564,8 @@ class ImageSegmentationApp(QMainWindow):
             self.current_label = []
             self.current_path_item = None
 
-            # Preserve current image state
             if self.processed_data is not None:
-                self._update_display()  # Refresh display without changing processed data
+                self._update_display()
 
             self.statusBar.showMessage("Labels reset - processing preserved", 3000)
 
@@ -1526,39 +1647,106 @@ class ImageSegmentationApp(QMainWindow):
                 white_bg.convert('RGB').save(file_path)
                 self.statusBar.showMessage(f'Labels saved as {file_path}', 3000)
 
+    # def undo(self) -> None:
+    #     # Handle in-progress drawings
+    #     if self.drawing:
+    #         self.scene.removeItem(self.current_path_item)
+    #         self.current_path_item = None
+    #         self.current_label = []
+    #         self.drawing = False
+    #         self.statusBar.showMessage("Drawing canceled", 3000)
+    #         return
+            
+    #     # Standard undo for closed polygons and unclosed paths
+    #     if self.undo_stack:
+    #         entry = self.undo_stack.pop()
+    #         # Safely remove overlay if it exists
+    #         if entry['overlay'] is not None and entry['overlay'].scene() == self.scene:
+    #             self.scene.removeItem(entry['overlay'])
+    #         # Safely remove path if it exists
+    #         if entry['path'] is not None and entry['path'].scene() == self.scene:
+    #             self.scene.removeItem(entry['path'])
+    #         self.redo_stack.append(entry)
+    #         self.label_counter = len(self.undo_stack)
+    #         self.statusBar.showMessage(f"Undo: Label removed ({len(self.undo_stack)} left)", 3000)
+
+    # def redo(self) -> None:
+    #     if self.redo_stack:
+    #         entry = self.redo_stack.pop()
+    #         # Safely add overlay if it exists
+    #         if entry['overlay'] is not None:
+    #             self.scene.addItem(entry['overlay'])
+    #         # Safely add path if it exists
+    #         if entry['path'] is not None:
+    #             self.scene.addItem(entry['path'])
+    #         self.undo_stack.append(entry)
+    #         self.label_counter = len(self.undo_stack)
+    #         self.statusBar.showMessage(f"Redo: Label restored ({len(self.redo_stack)} left)", 3000)
+
     def undo(self) -> None:
-        # Handle in-progress drawings
         if self.drawing:
-            self.scene.removeItem(self.current_path_item)
+            # Handle in-progress drawing cleanup
+            if self.current_path_item and self.current_path_item.scene() == self.scene:
+                self.scene.removeItem(self.current_path_item)
             self.current_path_item = None
             self.current_label = []
             self.drawing = False
             self.statusBar.showMessage("Drawing canceled", 3000)
             return
-            
-        # Standard undo for closed polygons and unclosed paths
+                
         if self.undo_stack:
             entry = self.undo_stack.pop()
-            # Safely remove overlay if it exists
-            if entry['overlay'] is not None and entry['overlay'].scene() == self.scene:
-                self.scene.removeItem(entry['overlay'])
-            # Safely remove path if it exists
-            if entry['path'] is not None and entry['path'].scene() == self.scene:
-                self.scene.removeItem(entry['path'])
-            self.redo_stack.append(entry)
+            
+            if entry['type'] == 'erase':
+                # Restore erased portions
+                for op in entry['operations']:
+                    original = op['original_entry']
+                    # Restore path
+                    if original['path'].scene() == self.scene:
+                        original['path'].setPath(op['original_path'])
+                    # Restore overlay
+                    if op['original_overlay'] and op['original_overlay'].scene() is None:
+                        self.scene.addItem(op['original_overlay'])
+                        original['overlay'] = op['original_overlay']
+                
+                self.redo_stack.append(entry)
+                
+            elif entry['type'] == 'draw':
+                # Existing draw undo logic with scene checks
+                if entry['overlay'] and entry['overlay'].scene() == self.scene:
+                    self.scene.removeItem(entry['overlay'])
+                if entry['path'] and entry['path'].scene() == self.scene:
+                    self.scene.removeItem(entry['path'])
+                self.redo_stack.append(entry)
+
             self.label_counter = len(self.undo_stack)
             self.statusBar.showMessage(f"Undo: Label removed ({len(self.undo_stack)} left)", 3000)
 
     def redo(self) -> None:
         if self.redo_stack:
             entry = self.redo_stack.pop()
-            # Safely add overlay if it exists
-            if entry['overlay'] is not None:
-                self.scene.addItem(entry['overlay'])
-            # Safely add path if it exists
-            if entry['path'] is not None:
-                self.scene.addItem(entry['path'])
-            self.undo_stack.append(entry)
+            
+            if entry['type'] == 'erase':
+                # Re-apply erasure
+                for op in entry['operations']:
+                    original = op['original_entry']
+                    # Re-modify path
+                    if original['path'].scene() == self.scene:
+                        original['path'].setPath(original['path'].path().subtracted(self.eraser_path))
+                    # Remove overlay if exists
+                    if original.get('overlay') and original['overlay'].scene() == self.scene:
+                        self.scene.removeItem(original['overlay'])
+                
+                self.undo_stack.append(entry)
+                
+            elif entry['type'] == 'draw':
+                # Existing draw redo logic with scene checks
+                if entry['overlay'] and entry['overlay'].scene() is None:
+                    self.scene.addItem(entry['overlay'])
+                if entry['path'] and entry['path'].scene() is None:
+                    self.scene.addItem(entry['path'])
+                self.undo_stack.append(entry)
+
             self.label_counter = len(self.undo_stack)
             self.statusBar.showMessage(f"Redo: Label restored ({len(self.redo_stack)} left)", 3000)
 

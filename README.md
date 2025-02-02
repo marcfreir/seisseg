@@ -6,7 +6,7 @@ Segmentation Tool for Seismic Images
 
 Annotation for seismic features
 
-> Status: v0.0.2 (beta) on-going
+> Status: v0.1.1 on-going
 
 
 </div>
@@ -15,7 +15,7 @@ Annotation for seismic features
 Resources:
 
 Python: python3.12.3 venv
-Pip packages: Pillow, PyQt5, Numpy, Matplotlib
+Pip packages: Pillow, PyQt5, Numpy, Matplotlib, Scipy, Scikit Image, Tifffile
 
 Status: On-going
 ```

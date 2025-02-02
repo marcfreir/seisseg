@@ -336,7 +336,7 @@ class ImageSegmentationApp(QMainWindow):
         self.logo_item = QGraphicsSvgItem('img/seisseg_logo_cc.svg')
 
         self.label = QLabel()
-        self.label.setText('SeisSeg v0.1.1')
+        self.label.setText('SeisSeg v0.0.9')
         self.label.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.label)
 
@@ -1322,6 +1322,59 @@ class ImageSegmentationApp(QMainWindow):
             self.eraser_path.lineTo(scene_pos)
             self.eraser_path_item.setPath(self.eraser_path)
 
+    
+    # def finish_eraser(self) -> None:
+    #     if not self.eraser_drawing or self.eraser_path is None:
+    #         return
+
+    #     # For each label entry in the undo stack, try to subtract the eraser stroke.
+    #     for entry in self.undo_stack:
+    #         # entry['path'] is the QGraphicsPathItem for the label.
+    #         label_path_item = entry.get('path')
+    #         if label_path_item is None:
+    #             continue
+    #         label_path = label_path_item.path()
+    #         # If the eraser stroke intersects this label, subtract the eraser area.
+    #         if label_path.intersects(self.eraser_path):
+    #             new_path = label_path.subtracted(self.eraser_path)
+    #             label_path_item.setPath(new_path)
+    #             # Optionally update the overlay if the label is closed.
+    #             if entry.get('overlay') is not None:
+    #                 # Recompute the filled overlay from the modified path if possible.
+    #                 # (This example assumes that if the label is still closed, the first and last points match.)
+    #                 if new_path.elementCount() > 2:
+    #                     # Build a polygon from the new_path elements.
+    #                     polygon = []
+    #                     for i in range(new_path.elementCount()):
+    #                         el = new_path.elementAt(i)
+    #                         polygon.append((el.x, el.y))
+    #                     # Check if the path is still closed.
+    #                     if polygon and polygon[0] == polygon[-1]:
+    #                         # Recompute the overlay using your fill procedure.
+    #                         mask = Image.new('L', self.image.size, 0)
+    #                         draw = ImageDraw.Draw(mask)
+    #                         draw.polygon(polygon, fill=255)
+    #                         color_layer = Image.new('RGBA', self.image.size, entry['label'][1].name())
+    #                         overlay_img = Image.alpha_composite(self.image.convert('RGBA'),
+    #                                                             color_layer.convert('RGBA'))
+    #                         overlay_img.putalpha(mask)
+    #                         qimage = QImage(overlay_img.tobytes(), overlay_img.width, overlay_img.height,
+    #                                         overlay_img.width * 4, QImage.Format_RGBA8888)
+    #                         # Remove the old overlay and add the new one.
+    #                         old_overlay = entry.get('overlay')
+    #                         # if old_overlay is not None:
+    #                         #     self.scene.removeItem(old_overlay)
+    #                         if old_overlay is not None and old_overlay.scene() == self.scene:
+    #                             self.scene.removeItem(old_overlay)
+    #                         new_overlay_item = QGraphicsPixmapItem(QPixmap.fromImage(qimage))
+    #                         self.scene.addItem(new_overlay_item)
+    #                         entry['overlay'] = new_overlay_item
+    #     # Remove the eraser stroke item from the scene.
+    #     self.scene.removeItem(self.eraser_path_item)
+    #     self.eraser_path_item = None
+    #     self.eraser_drawing = False
+    #     self.eraser_path = None
+    #     self.statusBar.showMessage("Erasing applied", 2000)
 
     def finish_eraser(self) -> None:
         if not self.eraser_drawing or self.eraser_path is None:
@@ -1368,6 +1421,9 @@ class ImageSegmentationApp(QMainWindow):
         self.eraser_drawing = False
         self.eraser_path = None
         self.statusBar.showMessage("Erasing applied", 2000)
+
+
+
 
 
     def fill_label(self) -> None:

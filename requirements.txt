@@ -1,4 +1,7 @@
-Pillow
+pillow
 PyQt5
-Numpy
-Matplotlib
+numpy
+matplotlib
+scipy
+tifffile
+scikit-image
