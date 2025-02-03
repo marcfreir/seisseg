@@ -336,7 +336,7 @@ class ImageSegmentationApp(QMainWindow):
         self.logo_item = QGraphicsSvgItem('img/seisseg_logo_cc.svg')
 
         self.label = QLabel()
-        self.label.setText('SeisSeg v0.1.4')
+        self.label.setText('SeisSeg v0.1.3')
         self.label.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.label)
 
@@ -1604,6 +1604,43 @@ class ImageSegmentationApp(QMainWindow):
         # Apply color layer
         color_layer = Image.new('RGBA', bg_image.size, color.name())
         bg_image.paste(color_layer, mask=mask)
+
+
+    # def undo(self) -> None:
+    #     # Handle in-progress drawings
+    #     if self.drawing:
+    #         self.scene.removeItem(self.current_path_item)
+    #         self.current_path_item = None
+    #         self.current_label = []
+    #         self.drawing = False
+    #         self.statusBar.showMessage("Drawing canceled", 3000)
+    #         return
+            
+    #     # Standard undo for closed polygons and unclosed paths
+    #     if self.undo_stack:
+    #         entry = self.undo_stack.pop()
+    #         # Safely remove overlay if it exists
+    #         if entry['overlay'] is not None and entry['overlay'].scene() == self.scene:
+    #             self.scene.removeItem(entry['overlay'])
+    #         # Safely remove path if it exists
+    #         if entry['path'] is not None and entry['path'].scene() == self.scene:
+    #             self.scene.removeItem(entry['path'])
+    #         self.redo_stack.append(entry)
+    #         self.label_counter = len(self.undo_stack)
+    #         self.statusBar.showMessage(f"Undo: Label removed ({len(self.undo_stack)} left)", 3000)
+
+    # def redo(self) -> None:
+    #     if self.redo_stack:
+    #         entry = self.redo_stack.pop()
+    #         # Safely add overlay if it exists
+    #         if entry['overlay'] is not None:
+    #             self.scene.addItem(entry['overlay'])
+    #         # Safely add path if it exists
+    #         if entry['path'] is not None:
+    #             self.scene.addItem(entry['path'])
+    #         self.undo_stack.append(entry)
+    #         self.label_counter = len(self.undo_stack)
+    #         self.statusBar.showMessage(f"Redo: Label restored ({len(self.redo_stack)} left)", 3000)
 
     def undo(self) -> None:
         # Handle in-progress drawings first
