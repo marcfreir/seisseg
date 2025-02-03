@@ -336,7 +336,7 @@ class ImageSegmentationApp(QMainWindow):
         self.logo_item = QGraphicsSvgItem('img/seisseg_logo_cc.svg')
 
         self.label = QLabel()
-        self.label.setText('SeisSeg v0.1.3')
+        self.label.setText('SeisSeg v0.1.2')
         self.label.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.label)
 
@@ -1186,7 +1186,7 @@ class ImageSegmentationApp(QMainWindow):
         :return: None
         """
 
-        if not self.image or (not self.labels and not self.undo_stack):
+        if not self.image or not self.labels:
             return
         
         # Create grayscale mask
@@ -1202,32 +1202,6 @@ class ImageSegmentationApp(QMainWindow):
                 
             points = [(p.x(), p.y()) for p in polygon]
             draw.polygon(points, fill=class_idx)
-
-        # Draw all paths from undo stack (including unclosed traces)
-        for entry in self.undo_stack:
-            if entry.get('type') == 'draw' and entry.get('path'):
-                path = entry['path'].path()
-                color = entry['label'][1]
-                rgb = (color.red(), color.green(), color.blue())
-                class_idx = self.class_colors.get(rgb, 0)
-                if class_idx == 0:
-                    continue
-                
-                # Convert path to line segments
-                points = []
-                for i in range(path.elementCount()):
-                    elem = path.elementAt(i)
-                    points.append((elem.x, elem.y))
-                
-                # Draw lines with original pen width
-                pen_width = max(1, int(entry['path'].pen().width()))
-                if len(points) >= 2:
-                    for i in range(len(points)-1):
-                        draw.line([points[i], points[i+1]], fill=class_idx, width=pen_width)
-                    
-                    # Close the path if it's a polygon
-                    if points[0] == points[-1] and len(points) >= 3:
-                        draw.polygon(points, fill=class_idx)
         
         # Save mask
         base_name = os.path.splitext(os.path.basename(self.image_path))[0]
@@ -1312,22 +1286,26 @@ class ImageSegmentationApp(QMainWindow):
 
 
     def handle_left_release(self, scene_pos: QPoint) -> None:
+
         if self.eraser_mode and self.eraser_drawing:
             self.finish_eraser()
             return
 
         if self.drawing:
             self.drawing = False
-            self.statusBar.showMessage("Drawing stopped", 3000)
+            msg = "Drawing stopped - Press 'C' to close and save" 
+            if self.auto_pick_mode:
+                msg = "Auto-pick complete - Press 'C' to finalize"
+            self.statusBar.showMessage(msg, 3000)
 
-            # Always add to undo stack, even if not closed
-            self.undo_stack.append({
-                'type': 'draw',
-                'label': (self.current_label.copy(), self.current_color),
-                'overlay': None,
-                'path': self.current_path_item
-            })
-            self.redo_stack.clear()
+            # Check if the current path is unclosed and add to undo stack
+            if len(self.current_label) >= 2 and (self.current_label[0] != self.current_label[-1]):
+                self.undo_stack.append({
+                    'label': (self.current_label.copy(), self.current_color),
+                    'overlay': None,  # No overlay for unclosed path
+                    'path': self.current_path_item
+                })
+                self.redo_stack.clear()
 
     def start_eraser(self, scene_pos: QPoint) -> None:
         self.eraser_drawing = True
@@ -1413,26 +1391,14 @@ class ImageSegmentationApp(QMainWindow):
         :return: None
         """
 
-        if len(self.current_label) < 2:  # Changed from 3 to 2 to allow simple lines
+        if len(self.current_label) < 3 or self.current_label[0] != self.current_label[-1]:
             return
-        
-        # Automatically close if first and last points are close
-        if (self.current_label[0] - self.current_label[-1]).manhattanLength() < 5:
-            self.current_label.append(self.current_label[0])
       
         if self.image and self.current_label:
             polygon = [(p.x(), p.y()) for p in self.current_label]
             mask = Image.new('L', self.image.size, 0)
             draw = ImageDraw.Draw(mask)
-
-            # Handle both polygons and lines
-            if len(polygon) >= 3 and polygon[0] == polygon[-1]:
-                draw.polygon(polygon, fill=255)
-            else:
-                pen_width = self.current_path_item.pen().width()
-                if len(polygon) >= 2:
-                    for i in range(len(polygon)-1):
-                        draw.line([polygon[i], polygon[i+1]], fill=255, width=pen_width)
+            draw.polygon(polygon, fill=255)
 
             color_layer = Image.new('RGBA', self.image.size, self.current_color.name())
             overlay = Image.alpha_composite(self.image.convert('RGBA'), color_layer.convert('RGBA'))
@@ -1444,9 +1410,8 @@ class ImageSegmentationApp(QMainWindow):
             self.scene.addItem(overlay_item)
             self.labels.append((self.current_label, self.current_color))
 
-            # Update undo stack
+            # Store both overlay and path in the undo stack
             self.undo_stack.append({
-                'type': 'draw',
                 'label': (self.current_label.copy(), self.current_color),
                 'overlay': overlay_item,
                 'path': self.current_path_item
@@ -1519,92 +1484,47 @@ class ImageSegmentationApp(QMainWindow):
                 log_file.write(f'({point.x()}, {point.y()})\n')
         self.statusBar.showMessage(f'Label {self.label_counter} saved!', 3000)
 
-
     def save_labels(self) -> None:
-        if not self.image:
-            return
+        """
+        Save all labels as a single PNG image.
 
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, 'Save Labels', '', 'PNG Files (*.png)'
-        )
-        if not file_path:
-            return
+        This method prompts the user for a file path to save the labels, then creates
+        a white background with the labels and saves it as a PNG. The filename is
+        ensured to end with '.png' if it does not already.
 
-        if not file_path.lower().endswith('.png'):
-            file_path += '.png'
+        Preconditions:
+        - `self.image` must be set to a valid image.
+        - `self.labels` must contain the points of the labels.
 
-        # Create white background image
-        white_bg = Image.new('RGBA', self.image.size, (255, 255, 255, 255))
-        
-        # Draw all annotation elements
-        self._draw_all_annotations(white_bg)
-        
-        # Save final image
-        white_bg.convert('RGB').save(file_path)
-        self.statusBar.showMessage(f'Labels saved as {file_path}', 3000)
+        Postconditions:
+        - The labels are saved as a PNG image.
+        - A status message is displayed indicating the file path of the saved image.
 
+        :return: None
+        """
 
-    def _draw_all_annotations(self, bg_image: Image.Image) -> None:
-        """Draw both closed polygons and unclosed paths with proper styling"""
-        # Draw closed polygons from labels
-        for polygon, color in self.labels:
-            self._draw_single_annotation(bg_image, polygon, color, is_closed=True)
-        
-        # Draw unclosed paths from undo stack
-        for entry in self.undo_stack:
-            if entry.get('type') == 'draw' and entry.get('path'):
-                path_item = entry['path']
-                color = entry['label'][1]
-                path = path_item.path()
+        if self.image:
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, 'Save Labels', '', 'PNG Files (*.png)'
+            )
+            if file_path:
+                # Ensure the filename ends with .png
+                if not file_path.lower().endswith('.png'):
+                    file_path += '.png'
                 
-                # Extract points from QPainterPath
-                points = []
-                for i in range(path.elementCount()):
-                    elem = path.elementAt(i)
-                    points.append(QPoint(int(elem.x), int(elem.y)))
+                # Create white background with labels
+                white_bg = Image.new('RGBA', self.image.size, (255, 255, 255, 255))
+                for label in self.labels:
+                    polygon, color = label
+                    mask = Image.new('L', self.image.size, 0)
+                    draw = ImageDraw.Draw(mask)
+                    draw.polygon([(p.x(), p.y()) for p in polygon], fill=255)
+                    color_layer = Image.new('RGBA', self.image.size, color.name())
+                    white_bg.paste(color_layer, mask=mask)
                 
-                # Only draw if not closed
-                if len(points) >= 2 and points[0] != points[-1]:
-                    pen_width = max(1, path_item.pen().width())
-                    self._draw_single_annotation(
-                        bg_image, 
-                        points, 
-                        color, 
-                        is_closed=False, 
-                        pen_width=pen_width
-                    )
-
-    def _draw_single_annotation(self, 
-                            bg_image: Image.Image, 
-                            points: list, 
-                            color: QColor, 
-                            is_closed: bool, 
-                            pen_width: int = 1) -> None:
-        """Draw a single annotation (polygon or line) onto background image"""
-        mask = Image.new('L', bg_image.size, 0)
-        draw = ImageDraw.Draw(mask)
-        
-        # Convert QPoints to tuples
-        point_tuples = [(p.x(), p.y()) for p in points if isinstance(p, QPoint)] \
-                    if isinstance(points[0], QPoint) else points
-        
-        if is_closed and len(point_tuples) >= 3:
-            # Draw closed polygon
-            draw.polygon(point_tuples, fill=255)
-        elif len(point_tuples) >= 2:
-            # Draw lines with original pen width
-            for i in range(len(point_tuples)-1):
-                draw.line(
-                    [point_tuples[i], point_tuples[i+1]], 
-                    fill=255, 
-                    width=pen_width,
-                    joint="curve"  # Smooth line joints
-                )
-        
-        # Apply color layer
-        color_layer = Image.new('RGBA', bg_image.size, color.name())
-        bg_image.paste(color_layer, mask=mask)
-
+                # Convert to RGB before saving to avoid alpha channel issues
+                white_bg.convert('RGB').save(file_path)
+                self.statusBar.showMessage(f'Labels saved as {file_path}', 3000)
 
     def undo(self) -> None:
         # Handle in-progress drawings
