@@ -695,6 +695,41 @@ class ImageSegmentationApp(QMainWindow):
             
         Updates display with LBP result.
         """
+        # if self.processed_data is not None:
+        #     radius, ok = QInputDialog.getInt(self, 'LBP', 'Radius:', 1, 1, 5)
+        #     n_points, ok = QInputDialog.getInt(self, 'LBP', 'Points:', 8, 4, 24)
+            
+        #     if ok:
+        #         image_array = img_as_ubyte(self.processed_data)
+                
+        #         # Calculate LBP
+        #         lbp = local_binary_pattern(image_array, n_points, radius, method='uniform')
+                
+        #         # Normalize for display
+        #         lbp = (lbp / lbp.max() * 255).astype(np.uint8)
+        #         self.processed_data = lbp
+        #         self._update_display()
+
+        # if self.processed_data is not None:
+        #     radius, ok1 = QInputDialog.getInt(self, 'LBP', 'Radius:', 1, 1, 5)
+        #     n_points, ok2 = QInputDialog.getInt(self, 'LBP', 'Points:', 8, 4, 24)
+            
+        #     if ok1 and ok2:
+        #         # Ensure data is in correct format and range
+        #         if np.issubdtype(self.processed_data.dtype, np.floating):
+        #             # Normalize float data to [0, 1]
+        #             data = np.clip(self.processed_data, 0, 1)
+        #         else:
+        #             # Convert to float and normalize if needed
+        #             data = img_as_float(self.processed_data)
+                
+        #         # Calculate LBP
+        #         lbp = local_binary_pattern(data, n_points, radius, method='uniform')
+                
+        #         # Normalize for display
+        #         lbp = (lbp - lbp.min()) / (lbp.max() - lbp.min())  # Now in [0, 1]
+        #         self.processed_data = (lbp * 255).astype(np.uint8)
+        #         self._update_display()
 
         if self.processed_data is not None:
             radius, ok1 = QInputDialog.getInt(self, 'LBP', 'Radius:', 1, 1, 5)
