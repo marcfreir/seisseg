@@ -336,7 +336,7 @@ class ImageSegmentationApp(QMainWindow):
         self.logo_item = QGraphicsSvgItem('img/seisseg_logo_cc.svg')
 
         self.label = QLabel()
-        self.label.setText('SeisSeg v0.1.6')
+        self.label.setText('SeisSeg v0.1.4')
         self.label.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.label)
 
@@ -871,6 +871,19 @@ class ImageSegmentationApp(QMainWindow):
         self.processed_data = regions/classes  # Normalize for display
         self._update_display()
 
+    # def apply_spectral_decomposition(self) -> None:
+    #     """Time-frequency analysis using STFT"""
+    #     if self.processed_data is None: return
+        
+    #     # Get frequency band
+    #     freq, ok = QInputDialog.getDouble(self, 'Spectral Decomp', 'Target Frequency:', 30, 1, 100)
+    #     if not ok: return
+        
+    #     f, t, Zxx = sig.stft(self.processed_data, nperseg=64)
+    #     closest_idx = np.argmin(np.abs(f - freq))
+    #     spectral_mag = np.abs(Zxx[closest_idx])
+    #     self.processed_data = spectral_mag
+    #     self._update_display()
 
     def apply_spectral_decomposition(self) -> None:
         """Spectral decomposition using STFT with proper dimension handling"""
