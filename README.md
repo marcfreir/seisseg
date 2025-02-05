@@ -138,13 +138,13 @@ Collaborators:
 </div>
 
 
-```json
+```
 Citation APA format
 
 Freire, M., & Borin, E. (2025). SeisSeg - Seismic Image Segmentation (0.1.7). Zenodo. https://doi.org/10.5281/zenodo.14812035
 ```
 
-```json
+```
 Citation BIBTEX
 
 @software{freire_2025_14812035,
