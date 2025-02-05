@@ -136,3 +136,32 @@ Collaborators:
 
 <img src="screenshots/img11.png" alt="Screenshot 11" />
 </div>
+
+
+```json
+Citation APA format
+
+Freire, M., & Borin, E. (2025). SeisSeg - Seismic Image Segmentation (0.1.7). Zenodo. https://doi.org/10.5281/zenodo.14812035
+```
+
+```json
+Citation BIBTEX
+
+@software{freire_2025_14812035,
+  author       = {Freire, Marcos and
+                  Borin, Edson},
+  title        = {SeisSeg - Seismic Image Segmentation},
+  month        = feb,
+  year         = 2025,
+  publisher    = {Zenodo},
+  version      = {0.1.7},
+  doi          = {10.5281/zenodo.14812035},
+  url          = {https://doi.org/10.5281/zenodo.14812035},
+  swhid        = {swh:1:dir:0c30dc7c35347af0f657dee26e6e7c922b2996ea
+                   ;origin=https://doi.org/10.5281/zenodo.14812034;vi
+                   sit=swh:1:snp:b19f728a3f525dfa382ce0dd9ed378927e0c
+                   586b;anchor=swh:1:rel:56e58c0c5c2cba2dd2ac199972fb
+                   fc1183c1bbd6;path=seisseg-main
+                  },
+}
+```
