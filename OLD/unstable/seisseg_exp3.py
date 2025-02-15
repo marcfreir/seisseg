@@ -3,16 +3,16 @@ import os
 import json
 import io  # Import io to use BytesIO
 import numpy as np
-import tifffile
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QFileDialog, QColorDialog, QLabel, QVBoxLayout, 
     QWidget, QPushButton, QHBoxLayout, QGraphicsView, QGraphicsScene, 
     QGraphicsPixmapItem, QGraphicsPathItem, QInputDialog, QAction, QGraphicsPolygonItem
 )
 from PyQt5.QtGui import QImage, QPixmap, QPainter, QColor, QPen, QPainterPath, QShowEvent, QIcon, QPolygonF, QBrush
-from PyQt5.QtCore import Qt, QPoint, QEvent, QBuffer
+from PyQt5.QtCore import Qt, QPoint, QEvent
 from PyQt5.QtSvg import QGraphicsSvgItem
-from PIL import Image, ImageDraw, ImageChops
+from PIL import Image, ImageDraw
+import tifffile
 from skimage.filters import gabor, sobel
 from skimage.feature import local_binary_pattern, hog, graycomatrix, graycoprops
 from skimage import img_as_ubyte, img_as_float
@@ -23,6 +23,11 @@ import scipy.signal as sig
 from scipy import ndimage
 from scipy.ndimage import gaussian_filter
 from skimage.filters import threshold_multiotsu
+
+from PIL import ImageDraw, ImageChops
+from PyQt5.QtCore import QBuffer
+from PIL import ImageQt
+
 from typing import Optional, Dict, Tuple, List
 
 class CustomGraphicsView(QGraphicsView):
@@ -336,7 +341,7 @@ class ImageSegmentationApp(QMainWindow):
         self.logo_item = QGraphicsSvgItem('img/seisseg_logo_cc.svg')
 
         self.label = QLabel()
-        self.label.setText('SeisSeg v0.1.7')
+        self.label.setText('SeisSeg v0.1.6')
         self.label.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.label)
 
@@ -785,6 +790,8 @@ class ImageSegmentationApp(QMainWindow):
         """
 
         if self.processed_data is not None:
+            # img_gray = self.current_image.convert('L')
+            # image_array = np.array(img_gray)
 
             image_array = self.processed_data
             
@@ -1294,22 +1301,6 @@ class ImageSegmentationApp(QMainWindow):
                     # Close the path if it's a polygon
                     if points[0] == points[-1] and len(points) >= 3:
                         draw.polygon(points, fill=class_idx)
-
-        # Add flood fill processing
-        for entry in self.undo_stack:
-            if entry.get('type') == 'flood_fill':
-                fill_mask = entry.get('mask')
-                color = entry.get('color')
-                if not fill_mask or not color:
-                    continue
-                    
-                rgb = (color.red(), color.green(), color.blue())
-                class_idx = self.class_colors.get(rgb, 0)
-                if class_idx == 0:
-                    continue
-                    
-                # Apply the stored mask
-                mask.paste(class_idx, mask=fill_mask)
         
         # Save mask
         base_name = os.path.splitext(os.path.basename(self.image_path))[0]
@@ -1333,7 +1324,8 @@ class ImageSegmentationApp(QMainWindow):
             y = int(scene_pos.y())
             if 0 <= x < self.image.width and 0 <= y < self.image.height:
                 # Use the boundary-aware flood fill:
-                self.perform_flood_fill(x, y)
+                #self.fill_based_on_boundaries(x, y)
+                self.fill_polygon_label_with_pillow()
             return
 
         # If eraser mode is active, start an eraser stroke instead of a new label.
@@ -1438,60 +1430,11 @@ class ImageSegmentationApp(QMainWindow):
     def finish_eraser(self) -> None:
         if not self.eraser_drawing or self.eraser_path is None:
             return
-        
-        # Convert eraser path to PIL mask
-        eraser_mask = Image.new('L', self.image.size, 0)
-        draw = ImageDraw.Draw(eraser_mask)
-        path_points = [(self.eraser_path.elementAt(i).x, self.eraser_path.elementAt(i).y)
-                    for i in range(self.eraser_path.elementCount())]
-        
-        if len(path_points) >= 2:
-            for i in range(len(path_points)-1):
-                # Draw thicker lines to account for anti-aliasing (width)
-                draw.line([path_points[i], path_points[i+1]], fill=255, width=5)
-
-        # Process all undo stack entries
-        modified_entries = []
 
         # For each label in the undo stack, try to subtract the eraser stroke.
         for entry in self.undo_stack:
-            # Handle flood fill erasure
-            if entry.get('type') == 'flood_fill':
-                original_mask = entry['mask']
-
-                # Convert eraser mask to binary (if not already)
-                eraser_bin = eraser_mask.convert("1")
-                # Invert the eraser mask so that erased regions become 0
-                inverted_eraser = ImageChops.invert(eraser_bin.convert("L"))
-                # Update the original flood fill mask by keeping only areas not erased.
-                # (We use a logical AND between the original mask and the inverted eraser mask.)
-                
-                # # Create inverse of eraser mask
-                # inverted_eraser = Image.eval(eraser_mask, lambda x: 255 - x)
-                
-                # Subtract eraser area using logical AND
-                updated_mask = ImageChops.logical_and(
-                    original_mask.convert('1'), 
-                    inverted_eraser.convert('1')
-                ).convert('L')
-
-                # Only update if there is a change
-                if list(updated_mask.getdata()) != list(original_mask.getdata()):
-                    entry['mask'] = updated_mask
-                    # Recreate the overlay using the stored color
-                    color_layer = Image.new("RGBA", self.image.size, entry['color'].name())
-                    new_overlay_img = Image.composite(color_layer, Image.new("RGBA", self.image.size), updated_mask)
-                    qimage = self.pil2qimage(new_overlay_img)
-                    new_pixmap = QPixmap.fromImage(qimage)
-                    # Replace the overlay item in the scene
-                    if entry.get('overlay') and entry['overlay'].scene() == self.scene:
-                        self.scene.removeItem(entry['overlay'])
-                    entry['overlay'] = QGraphicsPixmapItem(new_pixmap)
-                    self.scene.addItem(entry['overlay'])
-
             label_path_item = entry.get('path')
             if label_path_item is None:
-                modified_entries.append(entry)
                 continue
             label_path = label_path_item.path()
             # If the eraser stroke intersects this label, subtract the eraser area.
@@ -1509,23 +1452,19 @@ class ImageSegmentationApp(QMainWindow):
                         for i in range(new_path.elementCount()):
                             el = new_path.elementAt(i)
                             polygon.append((el.x, el.y))
-
                         if polygon and polygon[0] == polygon[-1]:
-                            mask_img = Image.new('L', self.image.size, 0)
-                            draw_polygon = ImageDraw.Draw(mask_img)
-                            draw_polygon.polygon(polygon, fill=255)
+                            mask = Image.new('L', self.image.size, 0)
+                            draw = ImageDraw.Draw(mask)
+                            draw.polygon(polygon, fill=255)
                             color_layer = Image.new('RGBA', self.image.size, entry['label'][1].name())
                             overlay_img = Image.alpha_composite(self.image.convert('RGBA'),
                                                                 color_layer.convert('RGBA'))
-                            overlay_img.putalpha(mask_img)
+                            overlay_img.putalpha(mask)
                             qimage = QImage(overlay_img.tobytes(), overlay_img.width, overlay_img.height,
                                             overlay_img.width * 4, QImage.Format_RGBA8888)
                             new_overlay_item = QGraphicsPixmapItem(QPixmap.fromImage(qimage))
                             self.scene.addItem(new_overlay_item)
                             entry['overlay'] = new_overlay_item
-            modified_entries.append(entry)
-        self.undo_stack = modified_entries
-
         # Remove the eraser stroke item if it is in the scene.
         if self.eraser_path_item and self.eraser_path_item.scene() == self.scene:
             self.scene.removeItem(self.eraser_path_item)
@@ -1533,6 +1472,7 @@ class ImageSegmentationApp(QMainWindow):
         self.eraser_drawing = False
         self.eraser_path = None
         self.statusBar.showMessage("Erasing applied", 2000)
+
 
     def fill_label(self) -> None:
         """
@@ -1629,6 +1569,277 @@ class ImageSegmentationApp(QMainWindow):
             self.statusBar.showMessage(f"Reset error: {str(e)}", 5000)
 
 
+
+    # def perform_flood_fill(self, x: int, y: int):
+    #     # Render the scene to a pixmap
+    #     scene_rect = self.scene.sceneRect()
+    #     if scene_rect.isNull():
+    #         return
+
+    #     # Create a pixmap to render the scene
+    #     pixmap = QPixmap(int(scene_rect.width()), int(scene_rect.height()))
+    #     pixmap.fill(Qt.transparent)
+    #     painter = QPainter(pixmap)
+    #     painter.setRenderHint(QPainter.Antialiasing)
+    #     self.scene.render(painter)
+    #     painter.end()
+
+    #     # Convert QPixmap to Pillow Image
+    #     qimage = pixmap.toImage()
+    #     qimage = qimage.convertToFormat(QImage.Format_ARGB32)
+    #     buffer = QBuffer()
+    #     buffer.open(QBuffer.ReadWrite)
+    #     qimage.save(buffer, "PNG")
+    #     pil_image = Image.open(buffer).convert("RGBA")
+    #     buffer.close()
+
+    #     # Prepare for flood fill
+    #     filled_image = pil_image.copy()
+    #     fill_color = self.current_color.getRgb()[:3]  # RGB tuple
+    #     threshold = 30  # Adjust threshold for color matching tolerance
+
+    #     # Perform flood fill
+    #     ImageDraw.floodfill(
+    #         filled_image,
+    #         (x, y),
+    #         fill_color,
+    #         thresh=threshold,
+    #         border=None
+    #     )
+
+    #     # Calculate the filled region
+    #     diff = ImageChops.difference(pil_image, filled_image)
+    #     mask = diff.convert("L").point(lambda p: 255 if p > 0 else 0)
+
+    #     # Create overlay
+    #     color_layer = Image.new("RGBA", filled_image.size, self.current_color.name())
+    #     overlay = Image.composite(color_layer, Image.new("RGBA", filled_image.size), mask)
+
+    #     # Convert to QGraphicsPixmapItem
+    #     qimage = overlay.toqimage()
+    #     overlay_pixmap = QPixmap.fromImage(qimage)
+    #     overlay_item = QGraphicsPixmapItem(overlay_pixmap)
+    #     self.scene.addItem(overlay_item)
+
+    #     # Update undo stack
+    #     self.undo_stack.append({
+    #         'type': 'flood_fill',
+    #         'overlay': overlay_item,
+    #         'mask': mask
+    #     })
+    #     self.redo_stack.clear()
+    #     self.statusBar.showMessage("Area filled successfully!", 2000)
+
+
+    # def perform_flood_fill(self, x: int, y: int):
+    #     # Render the scene to a pixmap
+    #     scene_rect = self.scene.sceneRect()
+    #     if scene_rect.isNull():
+    #         return
+
+    #     # Create a pixmap of the scene
+    #     pixmap = QPixmap(int(scene_rect.width()), int(scene_rect.height()))
+    #     pixmap.fill(Qt.transparent)
+    #     painter = QPainter(pixmap)
+    #     painter.setRenderHint(QPainter.Antialiasing)
+    #     self.scene.render(painter)
+    #     painter.end()
+
+    #     # Convert to QImage (ARGB32 format)
+    #     qimage = pixmap.toImage().convertToFormat(QImage.Format_ARGB32)
+    #     width = qimage.width()
+    #     height = qimage.height()
+
+    #     # Convert QImage to Pillow Image (fix channel order)
+    #     buffer = qimage.constBits().tobytes()  # Get raw bytes
+    #     arr = np.frombuffer(buffer, dtype=np.uint8).reshape((height, width, 4))
+    #     arr[:, :, [0, 2]] = arr[:, :, [2, 0]]  # Swap BGR <-> RGB
+    #     pil_image = Image.fromarray(arr, 'RGBA')
+
+    #     # Perform flood fill
+    #     filled_image = pil_image.copy()
+    #     fill_color = self.current_color.getRgb()[:3]  # RGB tuple
+        
+    #     ImageDraw.floodfill(
+    #         filled_image,
+    #         (x, y),
+    #         fill_color,
+    #         thresh=30,
+    #         border=None
+    #     )
+
+    #     # Create overlay mask
+    #     diff = ImageChops.difference(pil_image, filled_image)
+    #     mask = diff.convert("L").point(lambda p: 255 if p > 0 else 0)
+
+    #     # Create color overlay
+    #     color_layer = Image.new("RGBA", filled_image.size, self.current_color.name())
+    #     overlay = Image.composite(color_layer, Image.new("RGBA", filled_image.size), mask)
+
+    #     # Convert to QPixmap and add to scene
+    #     overlay_qimage = ImageQt(overlay)
+    #     overlay_pixmap = QPixmap.fromImage(overlay_qimage)
+    #     overlay_item = QGraphicsPixmapItem(overlay_pixmap)
+    #     self.scene.addItem(overlay_item)
+
+    #     # Update undo stack
+    #     self.undo_stack.append({
+    #         'type': 'flood_fill',
+    #         'overlay': overlay_item
+    #     })
+    #     self.redo_stack.clear()
+
+    
+    
+
+    # def perform_flood_fill(self, x: int, y: int):
+    #     # Render the scene to a pixmap
+    #     scene_rect = self.scene.sceneRect()
+    #     if scene_rect.isNull():
+    #         return
+
+    #     pixmap = QPixmap(int(scene_rect.width()), int(scene_rect.height()))
+    #     pixmap.fill(Qt.transparent)
+    #     painter = QPainter(pixmap)
+    #     painter.setRenderHint(QPainter.Antialiasing)
+    #     self.scene.render(painter)
+    #     painter.end()
+
+    #     # Convert QPixmap to Pillow Image
+    #     qimage = pixmap.toImage()
+    #     qimage = qimage.convertToFormat(QImage.Format_ARGB32)
+    #     buffer = QBuffer()
+    #     buffer.open(QBuffer.ReadWrite)
+    #     qimage.save(buffer, "PNG")
+    #     # Convert QBuffer to a BytesIO stream
+    #     bytes_data = bytes(buffer.data())
+    #     buffer.close()
+    #     pil_image = Image.open(io.BytesIO(bytes_data)).convert("RGBA")
+
+    #     # Prepare for flood fill
+    #     filled_image = pil_image.copy()
+    #     # Get the fill color as an RGB tuple
+    #     fill_color = self.current_color.getRgb()[:3]  
+    #     threshold = 30  # Adjust threshold for color matching tolerance
+
+    #     # Perform flood fill using Pillow’s ImageDraw.floodfill
+    #     ImageDraw.floodfill(
+    #         filled_image,
+    #         (x, y),
+    #         fill_color,
+    #         thresh=threshold,
+    #         border=None
+    #     )
+
+    #     # Calculate the filled region by comparing images
+    #     diff = ImageChops.difference(pil_image, filled_image)
+    #     mask = diff.convert("L").point(lambda p: 255 if p > 0 else 0)
+
+    #     # Create an overlay from the fill
+    #     # Note: self.current_color.name() returns a hex string (e.g., "#FF0000")
+    #     # Pillow accepts such color strings.
+    #     color_layer = Image.new("RGBA", filled_image.size, self.current_color.name())
+    #     overlay = Image.composite(color_layer, Image.new("RGBA", filled_image.size), mask)
+
+    #     # Convert the Pillow Image back to a QImage, then to QPixmap
+    #     qimage_overlay = self.pil2qimage(overlay)
+    #     overlay_pixmap = QPixmap.fromImage(qimage_overlay)
+    #     overlay_item = QGraphicsPixmapItem(overlay_pixmap)
+    #     self.scene.addItem(overlay_item)
+
+    #     # Update undo stack
+    #     self.undo_stack.append({
+    #         'type': 'flood_fill',
+    #         'overlay': overlay_item,
+    #         'mask': mask
+    #     })
+    #     self.redo_stack.clear()
+    #     self.statusBar.showMessage("Area filled successfully!", 2000)
+
+    # def pil2qimage(self, im):
+    #     """Convert PIL Image to QImage."""
+    #     if im.mode == "RGB":
+    #         r, g, b = im.split()
+    #         im = Image.merge("RGB", (b, g, r))
+    #         data = im.tobytes()
+    #         qimage = QImage(data, im.width, im.height, QImage.Format_RGB888)
+    #     elif im.mode == "RGBA":
+    #         r, g, b, a = im.split()
+    #         im = Image.merge("RGBA", (b, g, r, a))
+    #         data = im.tobytes()
+    #         qimage = QImage(data, im.width, im.height, QImage.Format_RGBA8888)
+    #     else:
+    #         im = im.convert("RGBA")
+    #         data = im.tobytes()
+    #         qimage = QImage(data, im.width, im.height, QImage.Format_RGBA8888)
+    #     return qimage
+
+    # WORKING BUT AS A AUTO PICKING
+    # def perform_flood_fill(self, x: int, y: int):
+    #     # Render the scene to a pixmap
+    #     scene_rect = self.scene.sceneRect()
+    #     if scene_rect.isNull():
+    #         return
+
+    #     pixmap = QPixmap(int(scene_rect.width()), int(scene_rect.height()))
+    #     pixmap.fill(Qt.transparent)
+    #     painter = QPainter(pixmap)
+    #     painter.setRenderHint(QPainter.Antialiasing)
+    #     self.scene.render(painter)
+    #     painter.end()
+
+    #     # Convert QPixmap to Pillow Image
+    #     qimage = pixmap.toImage().convertToFormat(QImage.Format_ARGB32)
+    #     buffer = QBuffer()
+    #     buffer.open(QBuffer.ReadWrite)
+    #     qimage.save(buffer, "PNG")
+    #     bytes_data = bytes(buffer.data())
+    #     buffer.close()
+    #     pil_image = Image.open(io.BytesIO(bytes_data)).convert("RGBA")
+
+    #     # Prepare for flood fill
+    #     filled_image = pil_image.copy()
+        
+    #     # Use full RGBA tuple as fill color
+    #     fill_color = self.current_color.getRgb()  # (r, g, b, a)
+    #     threshold = 30  # Adjust as needed
+
+    #     # Adjust the fill coordinates relative to the rendered pixmap
+    #     offset = scene_rect.topLeft()
+    #     fill_point = (x - int(offset.x()), y - int(offset.y()))
+        
+    #     # Perform flood fill using Pillow’s ImageDraw.floodfill
+    #     ImageDraw.floodfill(
+    #         filled_image,
+    #         fill_point,
+    #         fill_color,
+    #         thresh=threshold,
+    #         border=None
+    #     )
+
+    #     # Calculate the filled region by comparing images
+    #     diff = ImageChops.difference(pil_image, filled_image)
+    #     mask = diff.convert("L").point(lambda p: 255 if p > 0 else 0)
+
+    #     # Create an overlay from the fill
+    #     color_layer = Image.new("RGBA", filled_image.size, self.current_color.name())
+    #     overlay = Image.composite(color_layer, Image.new("RGBA", filled_image.size), mask)
+
+    #     # Convert the Pillow Image back to QImage, then to QPixmap
+    #     qimage_overlay = self.pil2qimage(overlay)
+    #     overlay_pixmap = QPixmap.fromImage(qimage_overlay)
+    #     overlay_item = QGraphicsPixmapItem(overlay_pixmap)
+    #     self.scene.addItem(overlay_item)
+
+    #     # Update undo stack
+    #     self.undo_stack.append({
+    #         'type': 'flood_fill',
+    #         'overlay': overlay_item,
+    #         'mask': mask
+    #     })
+    #     self.redo_stack.clear()
+    #     self.statusBar.showMessage("Area filled successfully!", 2000)
+
     def pil2qimage(self, im):
         """Convert PIL Image to QImage."""
         if im.mode == "RGB":
@@ -1648,57 +1859,124 @@ class ImageSegmentationApp(QMainWindow):
         return qimage
 
 
-    def perform_flood_fill(self, x: int, y: int):
-        # Create boundary mask with existing paths and image borders
-        boundary = Image.new("L", self.image.size, 255)  # White = fillable
-        draw = ImageDraw.Draw(boundary)
-        
-        # Draw image borders as boundaries (black)
-        draw.rectangle([(0, 0), self.image.size], outline=0, width=2)
-        
-        # Draw all existing paths
-        for entry in self.undo_stack:
-            if 'path' in entry:
-                path = entry['path'].path()
-                pen_width = max(1, int(entry['path'].pen().width()))
-                points = [(path.elementAt(i).x, path.elementAt(i).y) 
-                        for i in range(path.elementCount())]
-                
-                # Draw lines between points
-                if len(points) >= 2:
-                    for i in range(len(points)-1):
-                        draw.line([points[i], points[i+1]], fill=0, width=pen_width)
-                
-                # Fill closed polygons
-                if len(points) >=3 and points[0] == points[-1]:
-                    draw.polygon(points, fill=0)
 
-        # Check boundary conditions
-        if boundary.getpixel((x, y)) == 0:
-            self.statusBar.showMessage("Can't fill on boundary!", 2000)
+    # def fill_polygon_label(self):
+    #     if not self.current_label or len(self.current_label) < 3:
+    #         self.statusBar.showMessage("Need at least 3 points for a polygon", 3000)
+    #         return
+
+    #     # Create a QPolygonF from the current label (list of QPoint)
+    #     polygon = QPolygonF(self.current_label)
+        
+    #     # Create a QGraphicsPolygonItem with the filled color
+    #     polygon_item = QGraphicsPolygonItem(polygon)
+    #     polygon_item.setBrush(QBrush(self.current_color))
+    #     polygon_item.setPen(QPen(self.current_color, 2))
+    #     self.scene.addItem(polygon_item)
+        
+    #     # Save the label (or add to undo stack)
+    #     self.labels.append((self.current_label.copy(), self.current_color))
+    #     self.undo_stack.append({'type': 'polygon_fill', 'item': polygon_item})
+    #     self.redo_stack.clear()
+    #     self.statusBar.showMessage("Polygon filled successfully!", 2000)
+        
+    #     # Clear current drawing if desired
+    #     self.current_label = []
+    #     self.current_path_item = None
+
+    def fill_polygon_label_with_pillow(self):
+        if not self.current_label or len(self.current_label) < 3:
+            self.statusBar.showMessage("Need at least 3 points for a polygon", 3000)
             return
 
-        # Perform flood fill with boundary constraints
-        fill_mask = boundary.copy()
-        ImageDraw.floodfill(fill_mask, (x, y), 128, border=0)
-        
-        # Create overlay from filled region
-        fill_area = fill_mask.point(lambda p: 255 if p == 128 else 0)
-        color_layer = Image.new("RGBA", self.image.size, self.current_color.name())
-        overlay = Image.composite(color_layer, Image.new("RGBA", self.image.size), fill_area)
+        # Get the polygon coordinates from your drawn label
+        polygon_coords = [(p.x(), p.y()) for p in self.current_label]
 
-        # Add to scene and update undo stack
-        qimage = self.pil2qimage(overlay)
-        overlay_item = QGraphicsPixmapItem(QPixmap.fromImage(qimage))
+        # Create a blank mask with the same size as your image (or processed image)
+        mask = Image.new("L", self.image.size, 0)
+        draw = ImageDraw.Draw(mask)
+        draw.polygon(polygon_coords, fill=255)
+
+        # Create a solid color layer using the chosen color.
+        # Note: self.current_color.name() returns a hex string like "#FF0000"
+        color_layer = Image.new("RGBA", self.image.size, self.current_color.name())
+        
+        # Composite the color using the mask over a transparent background.
+        overlay = Image.composite(color_layer, Image.new("RGBA", self.image.size), mask)
+        
+        # Convert the Pillow overlay to a QImage and then to a QGraphicsPixmapItem.
+        qimage_overlay = self.pil2qimage(overlay)
+        overlay_pixmap = QPixmap.fromImage(qimage_overlay)
+        overlay_item = QGraphicsPixmapItem(overlay_pixmap)
         self.scene.addItem(overlay_item)
         
-        self.undo_stack.append({
-            'type': 'flood_fill',
-            'overlay': overlay_item,
-            'mask': fill_area,
-            'color': self.current_color  # Store the color used
-        })
+        # Update your undo stack and label list as needed
+        self.labels.append((self.current_label.copy(), self.current_color))
+        self.undo_stack.append({'type': 'polygon_fill', 'overlay': overlay_item, 'mask': mask})
         self.redo_stack.clear()
+        self.statusBar.showMessage("Polygon mask created successfully!", 2000)
+        
+        # Clear current drawing if desired
+        self.current_label = []
+        self.current_path_item = None
+
+    def fill_based_on_boundaries(self, x: int, y: int):
+        # Create a boundary mask: white background (fillable)
+        canvas_size = self.image.size  # (width, height)
+        mask = Image.new("L", canvas_size, 255)
+        draw = ImageDraw.Draw(mask)
+        
+        # Draw the canvas borders (all four sides) as barriers.
+        border_thickness = 3
+        draw.rectangle([(0, 0), (canvas_size[0]-1, canvas_size[1]-1)], outline=0, width=border_thickness)
+        
+        # Draw the current trace as a barrier.
+        # Get coordinates from current_label (list of QPoint)
+        trace_coords = [(p.x(), p.y()) for p in self.current_label]
+        if len(trace_coords) >= 2:
+            trace_thickness = 3  # adjust as needed
+            # Draw the polyline (if closed, it won’t matter—the endpoints will nearly coincide)
+            draw.line(trace_coords, fill=0, width=trace_thickness)
+            # If the trace is closed (first and last points are nearly the same), connect them explicitly.
+            if len(trace_coords) >= 3 and (
+                abs(trace_coords[0][0] - trace_coords[-1][0]) < 5 and 
+                abs(trace_coords[0][1] - trace_coords[-1][1]) < 5
+            ):
+                draw.line([trace_coords[-1], trace_coords[0]], fill=0, width=trace_thickness)
+        
+        # Now, the mask has black boundaries (value 0) where the canvas border and your trace are drawn,
+        # and white (255) elsewhere.
+        # Flood fill the mask starting at (x, y) with a unique value (e.g., 128).
+        # (Make sure x, y are in image coordinates.)
+        ImageDraw.floodfill(mask, (x, y), 128, thresh=10)
+        
+        # Convert the filled region (pixels equal to 128) into a binary mask:
+        final_mask = mask.point(lambda p: 255 if p == 128 else 0)
+        
+        # Now create the color overlay using the final_mask.
+        # Create a solid color layer using the current color.
+        color_layer = Image.new("RGBA", canvas_size, self.current_color.name())
+        overlay = Image.composite(color_layer, Image.new("RGBA", canvas_size), final_mask)
+        
+        # Convert overlay (a Pillow image) to a QImage and then to QGraphicsPixmapItem.
+        qimage_overlay = self.pil2qimage(overlay)
+        overlay_pixmap = QPixmap.fromImage(qimage_overlay)
+        overlay_item = QGraphicsPixmapItem(overlay_pixmap)
+        self.scene.addItem(overlay_item)
+        
+        # Update undo/label data as desired.
+        self.labels.append((self.current_label.copy(), self.current_color))
+        self.undo_stack.append({'type': 'flood_fill_boundaries', 'overlay': overlay_item, 'mask': final_mask})
+        self.redo_stack.clear()
+        self.statusBar.showMessage("Area filled based on boundaries!", 2000)
+        
+        # Clear the current trace if needed.
+        self.current_label = []
+        self.current_path_item = None
+
+
+
+
 
 
     def save_label_log(self) -> None:
@@ -1788,15 +2066,6 @@ class ImageSegmentationApp(QMainWindow):
                         pen_width=pen_width
                     )
 
-            if entry.get('type') == 'flood_fill':
-                color = entry.get('color')
-                fill_mask = entry.get('mask')
-                if color and fill_mask:
-                    # color_layer = Image.new("RGBA", self.image.size, color.name())
-                    color_layer = Image.new("RGBA", self.image.size, entry['color'].name())
-                    bg_image.paste(color_layer, mask=fill_mask)
-
-
     def _draw_single_annotation(self, 
                             bg_image: Image.Image, 
                             points: list, 
@@ -1841,10 +2110,6 @@ class ImageSegmentationApp(QMainWindow):
 
         if self.undo_stack:
             entry = self.undo_stack.pop()
-
-            if entry['type'] == 'flood_fill':
-                if entry.get('overlay') and entry['overlay'].scene() == self.scene:
-                    self.scene.removeItem(entry['overlay'])
             
             # Handle different entry types
             if entry['type'] == 'draw':
@@ -1870,10 +2135,6 @@ class ImageSegmentationApp(QMainWindow):
     def redo(self) -> None:
         if self.redo_stack:
             entry = self.redo_stack.pop()
-
-            if entry['type'] == 'flood_fill':
-                if entry.get('overlay') and entry['overlay'].scene() is None:
-                    self.scene.addItem(entry['overlay'])
             
             # Handle different entry types
             if entry['type'] == 'draw':

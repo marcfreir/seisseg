@@ -1,18 +1,17 @@
 import sys
 import os
 import json
-import io  # Import io to use BytesIO
 import numpy as np
-import tifffile
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QFileDialog, QColorDialog, QLabel, QVBoxLayout, 
     QWidget, QPushButton, QHBoxLayout, QGraphicsView, QGraphicsScene, 
-    QGraphicsPixmapItem, QGraphicsPathItem, QInputDialog, QAction, QGraphicsPolygonItem
+    QGraphicsPixmapItem, QGraphicsPathItem, QInputDialog, QAction
 )
-from PyQt5.QtGui import QImage, QPixmap, QPainter, QColor, QPen, QPainterPath, QShowEvent, QIcon, QPolygonF, QBrush
-from PyQt5.QtCore import Qt, QPoint, QEvent, QBuffer
+from PyQt5.QtGui import QImage, QPixmap, QPainter, QColor, QPen, QPainterPath, QShowEvent, QIcon
+from PyQt5.QtCore import Qt, QPoint, QEvent
 from PyQt5.QtSvg import QGraphicsSvgItem
-from PIL import Image, ImageDraw, ImageChops
+from PIL import Image, ImageDraw
+import tifffile
 from skimage.filters import gabor, sobel
 from skimage.feature import local_binary_pattern, hog, graycomatrix, graycoprops
 from skimage import img_as_ubyte, img_as_float
@@ -23,6 +22,7 @@ import scipy.signal as sig
 from scipy import ndimage
 from scipy.ndimage import gaussian_filter
 from skimage.filters import threshold_multiotsu
+
 from typing import Optional, Dict, Tuple, List
 
 class CustomGraphicsView(QGraphicsView):
@@ -336,7 +336,7 @@ class ImageSegmentationApp(QMainWindow):
         self.logo_item = QGraphicsSvgItem('img/seisseg_logo_cc.svg')
 
         self.label = QLabel()
-        self.label.setText('SeisSeg v0.1.7')
+        self.label.setText('SeisSeg v0.1.6')
         self.label.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.label)
 
@@ -429,35 +429,11 @@ class ImageSegmentationApp(QMainWindow):
         self.auto_pick_action.triggered.connect(self.toggle_auto_pick_mode)
         self.addAction(self.auto_pick_action)
 
-        # In the button layout section
-        self.flood_fill_button = QPushButton('Flood Fill (F)')
-        self.flood_fill_button.clicked.connect(self.toggle_flood_fill_mode)
-        button_layout.addWidget(self.flood_fill_button)
-
-        # Keyboard shortcut
-        self.flood_fill_action = QAction(self)
-        self.flood_fill_action.setShortcut('F')
-        self.flood_fill_action.triggered.connect(self.toggle_flood_fill_mode)
-        self.addAction(self.flood_fill_action)
-
-        # Add a flag for flood fill mode
-        self.flood_fill_mode = False
-
     def showEvent(self, event: QShowEvent) -> None:
         """Handle window show event to fit the logo initially"""
         super().showEvent(event)
         if self.logo_item is not None and self.image is None:
             self.view.fitInView(self.logo_item, Qt.KeepAspectRatio)
-
-    def toggle_flood_fill_mode(self):
-        self.flood_fill_mode = not self.flood_fill_mode
-        status = "ON" if self.flood_fill_mode else "OFF"
-        self.statusBar.showMessage(f"Flood Fill mode {status}", 2000)
-        # Update cursor
-        if self.flood_fill_mode:
-            self.view.viewport().setCursor(Qt.PointingHandCursor)
-        else:
-            self.view.viewport().setCursor(Qt.CrossCursor)
 
     def toggle_eraser_mode(self) -> None:
         self.eraser_mode = not self.eraser_mode
@@ -785,6 +761,8 @@ class ImageSegmentationApp(QMainWindow):
         """
 
         if self.processed_data is not None:
+            # img_gray = self.current_image.convert('L')
+            # image_array = np.array(img_gray)
 
             image_array = self.processed_data
             
@@ -1294,22 +1272,6 @@ class ImageSegmentationApp(QMainWindow):
                     # Close the path if it's a polygon
                     if points[0] == points[-1] and len(points) >= 3:
                         draw.polygon(points, fill=class_idx)
-
-        # Add flood fill processing
-        for entry in self.undo_stack:
-            if entry.get('type') == 'flood_fill':
-                fill_mask = entry.get('mask')
-                color = entry.get('color')
-                if not fill_mask or not color:
-                    continue
-                    
-                rgb = (color.red(), color.green(), color.blue())
-                class_idx = self.class_colors.get(rgb, 0)
-                if class_idx == 0:
-                    continue
-                    
-                # Apply the stored mask
-                mask.paste(class_idx, mask=fill_mask)
         
         # Save mask
         base_name = os.path.splitext(os.path.basename(self.image_path))[0]
@@ -1327,14 +1289,6 @@ class ImageSegmentationApp(QMainWindow):
 
 
     def handle_left_press(self, scene_pos: QPoint) -> None:
-
-        if self.flood_fill_mode and self.image:
-            x = int(scene_pos.x())
-            y = int(scene_pos.y())
-            if 0 <= x < self.image.width and 0 <= y < self.image.height:
-                # Use the boundary-aware flood fill:
-                self.perform_flood_fill(x, y)
-            return
 
         # If eraser mode is active, start an eraser stroke instead of a new label.
         if self.eraser_mode:
@@ -1438,60 +1392,11 @@ class ImageSegmentationApp(QMainWindow):
     def finish_eraser(self) -> None:
         if not self.eraser_drawing or self.eraser_path is None:
             return
-        
-        # Convert eraser path to PIL mask
-        eraser_mask = Image.new('L', self.image.size, 0)
-        draw = ImageDraw.Draw(eraser_mask)
-        path_points = [(self.eraser_path.elementAt(i).x, self.eraser_path.elementAt(i).y)
-                    for i in range(self.eraser_path.elementCount())]
-        
-        if len(path_points) >= 2:
-            for i in range(len(path_points)-1):
-                # Draw thicker lines to account for anti-aliasing (width)
-                draw.line([path_points[i], path_points[i+1]], fill=255, width=5)
-
-        # Process all undo stack entries
-        modified_entries = []
 
         # For each label in the undo stack, try to subtract the eraser stroke.
         for entry in self.undo_stack:
-            # Handle flood fill erasure
-            if entry.get('type') == 'flood_fill':
-                original_mask = entry['mask']
-
-                # Convert eraser mask to binary (if not already)
-                eraser_bin = eraser_mask.convert("1")
-                # Invert the eraser mask so that erased regions become 0
-                inverted_eraser = ImageChops.invert(eraser_bin.convert("L"))
-                # Update the original flood fill mask by keeping only areas not erased.
-                # (We use a logical AND between the original mask and the inverted eraser mask.)
-                
-                # # Create inverse of eraser mask
-                # inverted_eraser = Image.eval(eraser_mask, lambda x: 255 - x)
-                
-                # Subtract eraser area using logical AND
-                updated_mask = ImageChops.logical_and(
-                    original_mask.convert('1'), 
-                    inverted_eraser.convert('1')
-                ).convert('L')
-
-                # Only update if there is a change
-                if list(updated_mask.getdata()) != list(original_mask.getdata()):
-                    entry['mask'] = updated_mask
-                    # Recreate the overlay using the stored color
-                    color_layer = Image.new("RGBA", self.image.size, entry['color'].name())
-                    new_overlay_img = Image.composite(color_layer, Image.new("RGBA", self.image.size), updated_mask)
-                    qimage = self.pil2qimage(new_overlay_img)
-                    new_pixmap = QPixmap.fromImage(qimage)
-                    # Replace the overlay item in the scene
-                    if entry.get('overlay') and entry['overlay'].scene() == self.scene:
-                        self.scene.removeItem(entry['overlay'])
-                    entry['overlay'] = QGraphicsPixmapItem(new_pixmap)
-                    self.scene.addItem(entry['overlay'])
-
             label_path_item = entry.get('path')
             if label_path_item is None:
-                modified_entries.append(entry)
                 continue
             label_path = label_path_item.path()
             # If the eraser stroke intersects this label, subtract the eraser area.
@@ -1509,23 +1414,19 @@ class ImageSegmentationApp(QMainWindow):
                         for i in range(new_path.elementCount()):
                             el = new_path.elementAt(i)
                             polygon.append((el.x, el.y))
-
                         if polygon and polygon[0] == polygon[-1]:
-                            mask_img = Image.new('L', self.image.size, 0)
-                            draw_polygon = ImageDraw.Draw(mask_img)
-                            draw_polygon.polygon(polygon, fill=255)
+                            mask = Image.new('L', self.image.size, 0)
+                            draw = ImageDraw.Draw(mask)
+                            draw.polygon(polygon, fill=255)
                             color_layer = Image.new('RGBA', self.image.size, entry['label'][1].name())
                             overlay_img = Image.alpha_composite(self.image.convert('RGBA'),
                                                                 color_layer.convert('RGBA'))
-                            overlay_img.putalpha(mask_img)
+                            overlay_img.putalpha(mask)
                             qimage = QImage(overlay_img.tobytes(), overlay_img.width, overlay_img.height,
                                             overlay_img.width * 4, QImage.Format_RGBA8888)
                             new_overlay_item = QGraphicsPixmapItem(QPixmap.fromImage(qimage))
                             self.scene.addItem(new_overlay_item)
                             entry['overlay'] = new_overlay_item
-            modified_entries.append(entry)
-        self.undo_stack = modified_entries
-
         # Remove the eraser stroke item if it is in the scene.
         if self.eraser_path_item and self.eraser_path_item.scene() == self.scene:
             self.scene.removeItem(self.eraser_path_item)
@@ -1533,6 +1434,7 @@ class ImageSegmentationApp(QMainWindow):
         self.eraser_drawing = False
         self.eraser_path = None
         self.statusBar.showMessage("Erasing applied", 2000)
+
 
     def fill_label(self) -> None:
         """
@@ -1629,78 +1531,6 @@ class ImageSegmentationApp(QMainWindow):
             self.statusBar.showMessage(f"Reset error: {str(e)}", 5000)
 
 
-    def pil2qimage(self, im):
-        """Convert PIL Image to QImage."""
-        if im.mode == "RGB":
-            r, g, b = im.split()
-            im = Image.merge("RGB", (b, g, r))
-            data = im.tobytes()
-            qimage = QImage(data, im.width, im.height, QImage.Format_RGB888)
-        elif im.mode == "RGBA":
-            r, g, b, a = im.split()
-            im = Image.merge("RGBA", (b, g, r, a))
-            data = im.tobytes()
-            qimage = QImage(data, im.width, im.height, QImage.Format_RGBA8888)
-        else:
-            im = im.convert("RGBA")
-            data = im.tobytes()
-            qimage = QImage(data, im.width, im.height, QImage.Format_RGBA8888)
-        return qimage
-
-
-    def perform_flood_fill(self, x: int, y: int):
-        # Create boundary mask with existing paths and image borders
-        boundary = Image.new("L", self.image.size, 255)  # White = fillable
-        draw = ImageDraw.Draw(boundary)
-        
-        # Draw image borders as boundaries (black)
-        draw.rectangle([(0, 0), self.image.size], outline=0, width=2)
-        
-        # Draw all existing paths
-        for entry in self.undo_stack:
-            if 'path' in entry:
-                path = entry['path'].path()
-                pen_width = max(1, int(entry['path'].pen().width()))
-                points = [(path.elementAt(i).x, path.elementAt(i).y) 
-                        for i in range(path.elementCount())]
-                
-                # Draw lines between points
-                if len(points) >= 2:
-                    for i in range(len(points)-1):
-                        draw.line([points[i], points[i+1]], fill=0, width=pen_width)
-                
-                # Fill closed polygons
-                if len(points) >=3 and points[0] == points[-1]:
-                    draw.polygon(points, fill=0)
-
-        # Check boundary conditions
-        if boundary.getpixel((x, y)) == 0:
-            self.statusBar.showMessage("Can't fill on boundary!", 2000)
-            return
-
-        # Perform flood fill with boundary constraints
-        fill_mask = boundary.copy()
-        ImageDraw.floodfill(fill_mask, (x, y), 128, border=0)
-        
-        # Create overlay from filled region
-        fill_area = fill_mask.point(lambda p: 255 if p == 128 else 0)
-        color_layer = Image.new("RGBA", self.image.size, self.current_color.name())
-        overlay = Image.composite(color_layer, Image.new("RGBA", self.image.size), fill_area)
-
-        # Add to scene and update undo stack
-        qimage = self.pil2qimage(overlay)
-        overlay_item = QGraphicsPixmapItem(QPixmap.fromImage(qimage))
-        self.scene.addItem(overlay_item)
-        
-        self.undo_stack.append({
-            'type': 'flood_fill',
-            'overlay': overlay_item,
-            'mask': fill_area,
-            'color': self.current_color  # Store the color used
-        })
-        self.redo_stack.clear()
-
-
     def save_label_log(self) -> None:
         """
         Save label points to a log file.
@@ -1788,15 +1618,6 @@ class ImageSegmentationApp(QMainWindow):
                         pen_width=pen_width
                     )
 
-            if entry.get('type') == 'flood_fill':
-                color = entry.get('color')
-                fill_mask = entry.get('mask')
-                if color and fill_mask:
-                    # color_layer = Image.new("RGBA", self.image.size, color.name())
-                    color_layer = Image.new("RGBA", self.image.size, entry['color'].name())
-                    bg_image.paste(color_layer, mask=fill_mask)
-
-
     def _draw_single_annotation(self, 
                             bg_image: Image.Image, 
                             points: list, 
@@ -1841,10 +1662,6 @@ class ImageSegmentationApp(QMainWindow):
 
         if self.undo_stack:
             entry = self.undo_stack.pop()
-
-            if entry['type'] == 'flood_fill':
-                if entry.get('overlay') and entry['overlay'].scene() == self.scene:
-                    self.scene.removeItem(entry['overlay'])
             
             # Handle different entry types
             if entry['type'] == 'draw':
@@ -1870,10 +1687,6 @@ class ImageSegmentationApp(QMainWindow):
     def redo(self) -> None:
         if self.redo_stack:
             entry = self.redo_stack.pop()
-
-            if entry['type'] == 'flood_fill':
-                if entry.get('overlay') and entry['overlay'].scene() is None:
-                    self.scene.addItem(entry['overlay'])
             
             # Handle different entry types
             if entry['type'] == 'draw':
