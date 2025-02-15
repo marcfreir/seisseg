@@ -6,7 +6,7 @@ Segmentation Tool for Seismic Images
 
 Annotation for seismic features
 
-> Status: v0.1.7 on-going
+> Status: v0.1.9 on-going
 
 
 </div>
@@ -141,7 +141,7 @@ Collaborators:
 ```
 Citation APA format
 
-Freire, M., & Borin, E. (2025). SeisSeg - Seismic Image Segmentation (0.1.7). Zenodo. https://doi.org/10.5281/zenodo.14812035
+Freire, M., & Borin, E. (2025). SeisSeg - Seismic Image Segmentation (0.1.9). Zenodo. https://doi.org/10.5281/zenodo.14812035
 ```
 
 ```
@@ -154,7 +154,7 @@ Citation BIBTEX
   month        = feb,
   year         = 2025,
   publisher    = {Zenodo},
-  version      = {0.1.7},
+  version      = {0.1.9},
   doi          = {10.5281/zenodo.14812035},
   url          = {https://doi.org/10.5281/zenodo.14812035},
   swhid        = {swh:1:dir:0c30dc7c35347af0f657dee26e6e7c922b2996ea

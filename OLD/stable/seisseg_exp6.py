@@ -351,7 +351,7 @@ class ImageSegmentationApp(QMainWindow):
         self.logo_item = QGraphicsSvgItem('img/seisseg_logo_cc.svg')
 
         self.label = QLabel()
-        self.label.setText('SeisSeg v0.1.9')
+        self.label.setText('SeisSeg v0.1.8')
         self.label.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.label)
 
@@ -483,28 +483,39 @@ class ImageSegmentationApp(QMainWindow):
     def toggle_flood_fill_mode(self):
         self.flood_fill_mode = not self.flood_fill_mode
         status = "ON" if self.flood_fill_mode else "OFF"
+        # self.statusBar.showMessage(f"Flood Fill mode {status}", 2000)
+        # # Update cursor
+        # if self.flood_fill_mode:
+        #     self.view.viewport().setCursor(Qt.PointingHandCursor)
+        # else:
+        #     self.view.viewport().setCursor(Qt.CrossCursor)
 
         if self.flood_fill_mode:
             self.deactivate_other_modes('flood_fill')
             self.view.viewport().setCursor(Qt.CrossCursor)
+            self.statusBar.showMessage(f"Flood Fill mode {status}", 2000)
         else:
             self.view.viewport().setCursor(Qt.ArrowCursor)
-        
-        # Always show status message
-        self.statusBar.showMessage(f"Flood Fill mode {status}", 2000)
+            self.statusBar.clearMessage()
 
     def toggle_eraser_mode(self) -> None:
         self.eraser_mode = not self.eraser_mode
+        # if self.eraser_mode:
+        #     self.statusBar.showMessage("Eraser mode ON", 2000)
+        #     # Change cursor to a distinctive eraser style (you may choose a custom cursor)
+        #     self.view.viewport().setCursor(Qt.PointingHandCursor)
+        # else:
+        #     self.statusBar.showMessage("Eraser mode OFF", 2000)
+        #     self.view.viewport().setCursor(Qt.CrossCursor)
         status = "ON" if self.eraser_mode else "OFF"
-
+    
         if self.eraser_mode:
             self.deactivate_other_modes('eraser')
-            self.view.viewport().setCursor(Qt.SizeAllCursor)
+            self.view.viewport().setCursor(Qt.SizeAllCursor)  # Different cursor for eraser
+            self.statusBar.showMessage(f"Eraser mode {status}", 2000)
         else:
             self.view.viewport().setCursor(Qt.CrossCursor)
-        
-        # Always show status message
-        self.statusBar.showMessage(f"Eraser mode {status}", 2000)
+            self.statusBar.clearMessage()
 
 
     def toggle_auto_pick_mode(self) -> None:
@@ -518,14 +529,12 @@ class ImageSegmentationApp(QMainWindow):
             
         self.auto_pick_mode = not self.auto_pick_mode
         status = "ON" if self.auto_pick_mode else "OFF"
-
         self.statusBar.showMessage(f"Auto-pick mode {status}", 2000)
         self.auto_pick_button.setChecked(self.auto_pick_mode)
         
         # Change cursor for auto-pick mode
         if self.auto_pick_mode:
             self.view.viewport().setCursor(Qt.CrossCursor)
-            self.deactivate_other_modes('auto_pick')
         else:
             self.view.viewport().setCursor(Qt.ArrowCursor)
 
@@ -546,14 +555,14 @@ class ImageSegmentationApp(QMainWindow):
         # Text content
         text = QLabel()
         text.setText(
-            f"<b>SeisSeg v0.1.9</b><br><br>"
+            f"<b>SeisSeg v0.1.8</b><br><br>"
             "Seismic Image Segmentation Tool<br><br>"
             "Developed by:<br>"
             "MarcFreir<br>"
             "Contact: marcfreir@outlook.com<br><br>"
             "Licence: AGPL-3.0 license<br><br>"
             "Proudly developed @ Discovery Lab | Unicamp<br><br>"
-            "Citation:<br>Freire, M., & Borin, E. (2025). <br>SeisSeg - Seismic Image Segmentation (0.1.9). <br>Zenodo. https://doi.org/10.5281/zenodo.14812035<br><br>"
+            "Citation:<br>Freire, M., & Borin, E. (2025). <br>SeisSeg - Seismic Image Segmentation (0.1.8). <br>Zenodo. https://doi.org/10.5281/zenodo.14812035<br><br>"
             "Software Heritage<br>swh:1:dir:0c30dc7c35347af0f657dee26e6e7c922b2996ea<br><br>"
             "© 2025 SeisSeg Team"
 
@@ -1766,6 +1775,10 @@ class ImageSegmentationApp(QMainWindow):
             self.label_counter = 0
             self.current_label = []
             self.current_path_item = None
+
+            self.eraser_button.setEnabled(False)
+            self.flood_fill_button.setEnabled(False)
+            self.auto_pick_button.setEnabled(False)
 
             # Preserve current image state
             if self.processed_data is not None:
