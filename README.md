@@ -6,7 +6,7 @@ Segmentation Tool for Seismic Images
 
 Annotation for seismic features
 
-> Status: v0.1.1 on-going
+> Status: v0.1.7 on-going
 
 
 </div>

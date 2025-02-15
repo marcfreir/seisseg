@@ -7,7 +7,7 @@ import tifffile
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QFileDialog, QColorDialog, QLabel, QVBoxLayout, 
     QWidget, QPushButton, QHBoxLayout, QGraphicsView, QGraphicsScene, 
-    QGraphicsPixmapItem, QGraphicsPathItem, QInputDialog, QAction, QGraphicsPolygonItem
+    QGraphicsPixmapItem, QGraphicsPathItem, QInputDialog, QAction, QGraphicsPolygonItem, QDialog
 )
 from PyQt5.QtGui import QImage, QPixmap, QPainter, QColor, QPen, QPainterPath, QShowEvent, QIcon, QPolygonF, QBrush
 from PyQt5.QtCore import Qt, QPoint, QEvent, QBuffer
@@ -323,6 +323,19 @@ class ImageSegmentationApp(QMainWindow):
         cividis_action.triggered.connect(lambda: self.apply_color_palette('cividis'))
         palette_menu.addAction(cividis_action)
 
+        # Add Help menu after other menus
+        help_menu = menu_bar.addMenu('Help')
+        
+        # Add Help action
+        help_action = QAction('Documentation', self)
+        help_action.triggered.connect(self.show_help)
+        help_menu.addAction(help_action)
+        
+        # Add About action
+        about_action = QAction('About', self)
+        about_action.triggered.connect(self.show_about)
+        help_menu.addAction(about_action)
+
         # Add original image storage
         self.original_image = None  # Store original image for resetting
         self.current_image = None   # Store modified image
@@ -489,6 +502,93 @@ class ImageSegmentationApp(QMainWindow):
             self.view.viewport().setCursor(Qt.CrossCursor)
         else:
             self.view.viewport().setCursor(Qt.ArrowCursor)
+
+    def show_about(self):
+        """Display About dialog with application information"""
+        about_dialog = QDialog(self)
+        about_dialog.setWindowTitle("About SeisSeg")
+        about_dialog.setFixedSize(500, 600)
+        
+        layout = QVBoxLayout(about_dialog)
+        
+        # Application logo
+        logo_label = QLabel()
+        pixmap = QPixmap('img/seisseg_icon_n.png').scaled(100, 100, Qt.KeepAspectRatio)
+        logo_label.setPixmap(pixmap)
+        logo_label.setAlignment(Qt.AlignCenter)
+        
+        # Text content
+        text = QLabel()
+        text.setText(
+            f"<b>SeisSeg v0.1.7</b><br><br>"
+            "Seismic Image Segmentation Tool<br><br>"
+            "Developed by:<br>"
+            "MarcFreir<br>"
+            "Contact: marcfreir@outlook.com<br><br>"
+            "Licence: AGPL-3.0 license<br><br>"
+            "Proudly developed @ Discovery Lab | Unicamp<br><br>"
+            "Citation:<br>Freire, M., & Borin, E. (2025). <br>SeisSeg - Seismic Image Segmentation (0.1.7). <br>Zenodo. https://doi.org/10.5281/zenodo.14812035<br><br>"
+            "Software Heritage<br>swh:1:dir:0c30dc7c35347af0f657dee26e6e7c922b2996ea<br><br>"
+            "© 2025 SeisSeg Team"
+
+        )
+        text.setAlignment(Qt.AlignCenter)
+
+        about_dialog.setStyleSheet("""
+            QDialog {
+                background-color: #f0f0f0;
+            }
+            QLabel {
+                font-size: 14px;
+                margin: 10px;
+            }
+            QPushButton {
+                min-width: 80px;
+                padding: 5px;
+            }
+        """)
+        
+        # Close button
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(about_dialog.close)
+        
+        layout.addWidget(logo_label)
+        layout.addWidget(text)
+        layout.addWidget(close_btn)
+        
+        about_dialog.exec_()
+
+    def show_help(self):
+        """Display Help dialog with documentation links"""
+        help_dialog = QDialog(self)
+        help_dialog.setWindowTitle("Help")
+        help_dialog.setFixedSize(500, 200)
+        
+        layout = QVBoxLayout(help_dialog)
+        
+        # Help content
+        content = QLabel()
+        content.setText(
+            "<h3>SeisSeg Documentation</h3>"
+            "User Guide and Tutorials:<br>"
+            "<a href='https://github.com/marcfreir/seisseg'>https://github.com/marcfreir/seisseg</a><br><br>"
+            
+            "Keyboard Shortcuts:<br>"
+            "- C: Close polygon<br>"
+            "- E: Toggle eraser<br>"
+            "- F: Flood fill mode<br>"
+            "- A: Auto-pick mode"
+        )
+        content.setOpenExternalLinks(True)
+        
+        # Close button
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(help_dialog.close)
+        
+        layout.addWidget(content)
+        layout.addWidget(close_btn)
+        
+        help_dialog.exec_()
 
     def close_current_polygon(self):
         """Close and finalize both manual and auto-pick polygons"""
